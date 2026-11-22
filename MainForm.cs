@@ -103,7 +103,7 @@ internal sealed class MainForm : Form
         var panel = new Panel { Dock = DockStyle.Fill, BackColor = Sidebar, Padding = new Padding(16, 22, 16, 14) };
         var brand = new Label
         {
-            Text = "DIAGNÓSTICO\\r\\nPC",
+            Text = "DIAGNÓSTICO\r\nPC",
             Font = new Font("Segoe UI Semibold", 21F, FontStyle.Bold),
             ForeColor = Color.White,
             AutoSize = false,
@@ -139,7 +139,7 @@ internal sealed class MainForm : Form
 
         var bottom = new Label
         {
-            Text = "Análisis local · Solo lectura\\r\\nNo se envían datos a servidores.",
+            Text = "Análisis local · Solo lectura\r\nNo se envían datos a servidores.",
             Font = new Font("Segoe UI", 8.5F),
             ForeColor = Muted,
             Dock = DockStyle.Bottom,
@@ -158,7 +158,7 @@ internal sealed class MainForm : Form
     {
         var button = new Button
         {
-            Text = "  " + name + "\\r\\n     " + description,
+            Text = "  " + name + "\r\n     " + description,
             Width = 190,
             Height = 55,
             TextAlign = ContentAlignment.MiddleLeft,
@@ -367,7 +367,7 @@ internal sealed class MainForm : Form
 
         var intro = new Label
         {
-            Text = title + "\\r\\n" + description,
+            Text = title + "\r\n" + description,
             ForeColor = Muted,
             Font = new Font("Segoe UI", 9.5F),
             Dock = DockStyle.Fill,
@@ -535,13 +535,13 @@ internal sealed class MainForm : Form
         output.SelectionStart = output.TextLength;
         output.SelectionColor = LevelColor(entry.Level);
         output.SelectionFont = new Font("Segoe UI Semibold", 10F, FontStyle.Bold);
-        output.AppendText($"{LevelText(entry.Level)}  {entry.Title}\\r\\n");
+        output.AppendText($"{LevelText(entry.Level)}  {entry.Title}\r\n");
         output.SelectionColor = Muted;
         output.SelectionFont = new Font("Segoe UI", 8.5F);
-        output.AppendText($"Duración: {entry.Duration:mm\\:ss}  |  Código de salida: {(entry.ExitCode?.ToString() ?? "No disponible")}\\r\\n");
+        output.AppendText($"Duración: {entry.Duration:mm\\:ss}  |  Código de salida: {(entry.ExitCode?.ToString() ?? "No disponible")}\r\n");
         output.SelectionColor = Color.FromArgb(218, 224, 233);
         output.SelectionFont = new Font("Consolas", 9F);
-        output.AppendText(entry.Details + "\\r\\n\\r\\n");
+        output.AppendText(entry.Details + "\r\n\r\n");
         output.SelectionStart = output.TextLength;
         output.ScrollToCaret();
     }
@@ -584,16 +584,16 @@ internal sealed class MainForm : Form
             {
                 overviewOutput.SelectionColor = LevelColor(item.Level);
                 overviewOutput.SelectionFont = new Font("Segoe UI Semibold", 9.5F, FontStyle.Bold);
-                overviewOutput.AppendText($"{LevelText(item.Level)}  {item.Title}\\r\\n");
+                overviewOutput.AppendText($"{LevelText(item.Level)}  {item.Title}\r\n");
                 overviewOutput.SelectionColor = Color.Gainsboro;
                 overviewOutput.SelectionFont = new Font("Segoe UI", 9F);
-                overviewOutput.AppendText(GetRecommendation(item) + "\\r\\n\\r\\n");
+                overviewOutput.AppendText(GetRecommendation(item) + "\r\n\r\n");
             }
         }
 
         if (value.Entries.Any(x => (x.Id is "dism" or "sfc") && x.Level == FindingLevel.NotVerified))
         {
-            overviewOutput.AppendText("\\r\\nAlgunas pruebas de integridad requieren iniciar la aplicación como administrador y volver a ejecutar el análisis.");
+            overviewOutput.AppendText("\r\nAlgunas pruebas de integridad requieren iniciar la aplicación como administrador y volver a ejecutar el análisis.");
         }
     }
 
@@ -783,7 +783,7 @@ h1{font-size:28px;margin:0 0 8px}.muted{color:#aab7c8}.meta{display:flex;flex-wr
         if (isAdmin || isRunning) return;
         var answer = MessageBox.Show(
             this,
-            "Se abrirá otra instancia con permisos de administrador. Esto permite ejecutar DISM, SFC, Secure Boot y verificaciones adicionales.\\r\\n\\r\\nEl programa seguirá siendo de solo lectura: no reparará ni modificará el sistema.",
+            "Se abrirá otra instancia con permisos de administrador. Esto permite ejecutar DISM, SFC, Secure Boot y verificaciones adicionales.\r\n\r\nEl programa seguirá siendo de solo lectura: no reparará ni modificará el sistema.",
             "Permisos de administrador",
             MessageBoxButtons.OKCancel,
             MessageBoxIcon.Information);
