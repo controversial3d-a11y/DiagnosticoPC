@@ -282,7 +282,7 @@ try {
   }
 } catch {}
 if (-not $smartScreenKnown) {
-  'SmartScreen: Windows no expuso un valor legible en las ubicaciones consultadas; estado no determinado.'
+  '[NO VERIFICADO] SmartScreen: Windows no expuso un valor legible en las ubicaciones consultadas; estado no determinado.'
 }
 '=== SEGURIDAD BASADA EN VIRTUALIZACIÓN ==='
 try {
@@ -372,7 +372,7 @@ try {
 
         new("services", "Windows", "Servicios relevantes del sistema", """
 $ErrorActionPreference = 'Continue'
-$names = 'WinDefend','mpssvc','wuauserv','BITS','EventLog','Schedule','Dhcp','Dnscache','WlanSvc','CryptSvc','Winmgmt','AnyDesk','TeamViewer'
+$names = 'WinDefend','mpssvc','wuauserv','BITS','EventLog','Schedule','Dhcp','Dnscache','WlanSvc','CryptSvc','Winmgmt','AnyDesk','TeamViewer','MonectServerService'
 foreach ($n in $names) {
   try {
     $s = Get-Service -Name $n -ErrorAction Stop
@@ -385,7 +385,6 @@ foreach ($n in $names) {
         new("events", "Windows", "Errores críticos y advertencias recientes (7 días)", """
 $ErrorActionPreference = 'Continue'
 $since = (Get-Date).AddDays(-7)
-'=== EVENTOS IMPORTANTES DEL SISTEMA Y APLICACIONES ==='
 function Test-ImportantDiagnosticEvent($e) {
   $provider = [string]$e.ProviderName
   $id = [int]$e.Id
@@ -399,12 +398,17 @@ function Test-ImportantDiagnosticEvent($e) {
   return $false
 }
 try {
-  $events = @(Get-WinEvent -FilterHashtable @{LogName='System','Application'; Level=1,2; StartTime=$since} -MaxEvents 500 -ErrorAction SilentlyContinue |
-    Where-Object { $_.ProviderName -notmatch 'Kernel-Processor-Power|Kernel-Boot|Hyper-V-Hypervisor' })
-  "Eventos de error consultados (muestra máxima 500): $($events.Count)"
-  if ($events.Count -eq 0) { '[OK] No se encontraron eventos de error en la muestra consultada.' }
+  # Separate limits for System and Application prevent one log from hiding the other.
+  $systemEvents = @(Get-WinEvent -FilterHashtable @{LogName='System'; Level=1,2; StartTime=$since} -MaxEvents 251 -ErrorAction SilentlyContinue)
+  $appEvents = @(Get-WinEvent -FilterHashtable @{LogName='Application'; Level=1,2; StartTime=$since} -MaxEvents 251 -ErrorAction SilentlyContinue)
+  $events = @($systemEvents + $appEvents | Where-Object {
+    $_.ProviderName -notmatch 'Kernel-Processor-Power|Kernel-Boot|Hyper-V-Hypervisor'
+  })
+  "Registros de error/advertencia de System: $([math]::Min($systemEvents.Count,250)) de una muestra máxima de 250"
+  "Registros de error/advertencia de Application: $([math]::Min($appEvents.Count,250)) de una muestra máxima de 250"
+  if ($events.Count -eq 0) { '[OK] No se encontraron eventos de error o advertencia en las muestras consultadas.' }
   else {
-    $groups = $events | Group-Object ProviderName,Id | Sort-Object Count -Descending | Select-Object -First 40
+    $groups = $events | Group-Object ProviderName,Id | Sort-Object Count -Descending | Select-Object -First 50
     $importantCount = 0
     foreach ($g in $groups) {
       $e = $g.Group | Sort-Object TimeCreated -Descending | Select-Object -First 1
@@ -413,14 +417,16 @@ try {
       $important = Test-ImportantDiagnosticEvent $e
       if ($important) { $importantCount++ }
       $tag = if ($important) { 'AVISO' } else { 'INFO' }
-      "[$tag] $($e.ProviderName) | Evento $($e.Id) | Repeticiones en la muestra: $($g.Count) | Último: $($e.TimeCreated) | $msg"
+      "[$tag] $($e.ProviderName) | Evento $($e.Id) | Registros en muestra: $($g.Count) | Último: $($e.TimeCreated) | $msg"
     }
     if ($importantCount -gt 0) { '[AVISO] Se encontraron eventos específicos de corrupción NTFS, errores de almacenamiento, fallos de hardware o cierres inesperados.' }
   }
+  if ($systemEvents.Count -gt 250) { '[INFO] System alcanzó el límite de 250 eventos; el total real puede ser mayor.' }
+  if ($appEvents.Count -gt 250) { '[INFO] Application alcanzó el límite de 250 eventos; el total real puede ser mayor.' }
+  if ($systemEvents.Count -le 250 -and $appEvents.Count -le 250) { '[INFO] Ninguna de las dos muestras alcanzó su límite.' }
 } catch { "[NO VERIFICADO] No se pudieron consultar los registros: $($_.Exception.Message)" }
-'Los eventos se agrupan para reducir duplicados. Los eventos DCOM 10010 no se consideran automáticamente fallas críticas.'
+'Los eventos DCOM 10010 no se consideran automáticamente fallas críticas. Los conteos son muestras separadas por registro y no totales garantizados.'
 """, TimeSpan.FromSeconds(150)),
-
         new("updates", "Windows", "Actualizaciones instaladas y reinicio pendiente", """
 $ErrorActionPreference = 'Continue'
 '=== ACTUALIZACIONES INSTALADAS (MÁS RECIENTES) ==='

@@ -44,8 +44,12 @@ internal static class RecommendationEngine
         new("Microsoft Learn: firma digital de controladores", "https://learn.microsoft.com/en-us/windows-hardware/drivers/install/driver-signing");
     private static readonly RecommendationSource AnyDeskSource =
         new("AnyDesk: seguridad y acceso desatendido", "https://support.anydesk.com/docs/es/unattended-access");
+    private static readonly RecommendationSource MonectSource =
+        new("Monect: funciones oficiales de control remoto y streaming", "https://www.monect.com/pc");
     private static readonly RecommendationSource DefenderSource =
         new("Microsoft Support: opciones de examen de Seguridad de Windows", "https://support.microsoft.com/es-es/windows/security/threat-malware-protection/virus-and-threat-protection-in-the-windows-security-app");
+
+    private sealed record MissingStartupEntry(string Name, string Origin, string Executable, string RelatedSoftware);
 
     public static IReadOnlyList<DiagnosticRecommendation> Build(IEnumerable<DiagnosticEntry> entries)
     {
@@ -354,8 +358,14 @@ internal static class RecommendationEngine
                 new[] { SmartScreenSource }));
         }
 
-        if ((Details("startup") + Details("network") + Details("services"))
-            .Contains("AnyDesk", StringComparison.OrdinalIgnoreCase))
+        string startupDetails = Details("startup");
+        string networkDetails = Details("network");
+        string serviceDetails = Details("services");
+        bool anyDeskFound =
+            startupDetails.Contains("AnyDesk", StringComparison.OrdinalIgnoreCase) ||
+            Regex.IsMatch(networkDetails, @"(?im)^.*\|\s*PID\s+\d+\s*\|\s*AnyDesk(?:\s*\||\s*$)") ||
+            Regex.IsMatch(serviceDetails, @"(?im)^\s*AnyDesk\s+\|.*\|\s*Estado:");
+        if (anyDeskFound)
         {
             items.Add(new(
                 "remote-access", 110, "MEDIA", "Verificar el acceso remoto de AnyDesk",
@@ -462,22 +472,53 @@ internal static class RecommendationEngine
                 new[] { DefenderSource }));
         }
 
-        bool staleStartup = Details("startup-audit").Contains("El archivo no se encontró en la ruta indicada", StringComparison.OrdinalIgnoreCase);
-        if (staleStartup)
+        var missingStartupEntries = ExtractMissingStartupEntries(
+            Details("startup-audit"), Details("software-inventory"));
+        if (missingStartupEntries.Count > 0)
+        {
+            string evidence = "Se detectaron " + missingStartupEntries.Count +
+                " entradas cuyo ejecutable no existe en la ruta configurada:" + Environment.NewLine +
+                string.Join(Environment.NewLine, missingStartupEntries.Select(x =>
+                    "• " + x.Name + " | Origen: " + x.Origin +
+                    " | Ruta inexistente: " + x.Executable +
+                    " | " + x.RelatedSoftware));
+            var steps = missingStartupEntries.Select(x =>
+                "Revisá la entrada «" + x.Name + "» (" + x.Origin + "): el ejecutable " +
+                x.Executable + " no existe en esa ubicación. " + x.RelatedSoftware).ToList();
+            steps.Add("Abrí Configuración > Aplicaciones > Inicio y localizá cada entrada identificada.");
+            steps.Add("Si confirmás que una entrada quedó obsoleta, deshabilitá únicamente esa entrada desde la interfaz de Windows o desde la propia aplicación.");
+            items.Add(new(
+                "stale-startup", 140, "BAJA", "Revisar individualmente las entradas de inicio con rutas inexistentes",
+                evidence,
+                "Una ruta ausente puede corresponder a una actualización, un cambio de carpeta o un resto de una versión anterior. No demuestra infección ni significa que toda la aplicación esté desinstalada.",
+                steps,
+                null,
+                "No edites claves Run del Registro ni borres archivos manualmente. Si el inventario muestra que el programa sigue instalado, no lo desinstales por este hallazgo: solo se comprobó que ese ejecutable de inicio no existe en la ruta registrada.",
+                new[] { new RecommendationSource("Microsoft Support: configurar las aplicaciones de inicio en Windows", "https://support.microsoft.com/es-es/windows/configurar-las-aplicaciones-de-inicio-en-windows-115a420a-0bff-4a6f-90e0-1934c844e473") }));
+        }
+
+        bool monectFound =
+            startupDetails.Contains("MonectServerService", StringComparison.OrdinalIgnoreCase) ||
+            startupDetails.Contains("PC Remote Receiver", StringComparison.OrdinalIgnoreCase) ||
+            Regex.IsMatch(networkDetails, @"(?im)^.*\|\s*PID\s+\d+\s*\|\s*MonectServerService(?:\s*\||\s*$)") ||
+            Regex.IsMatch(serviceDetails, @"(?im)^\s*MonectServerService\s+\|.*\|\s*Estado:") ||
+            Regex.IsMatch(serviceDetails, @"(?im)^\s*\S+\s+\|\s*PC Remote Receiver[^|]*\|\s*Estado:");
+        if (monectFound)
         {
             items.Add(new(
-                "stale-startup", 140, "BAJA", "Revisar entradas de inicio que apuntan a archivos inexistentes",
-                "Una o más entradas de inicio hacen referencia a un ejecutable que no se encuentra en la ruta registrada.",
-                "Puede ser un residuo de una aplicación actualizada o desinstalada. No demuestra infección ni afecta necesariamente el inicio.",
+                "remote-access-monect", 111, "MEDIA", "Verificar Monect PC Remote / PC Remote Receiver",
+                "Se encontró el servicio o proceso MonectServerService. Monect ofrece control remoto de PC y streaming entre dispositivos. La presencia del servicio no demuestra actividad maliciosa ni exposición desde Internet.",
+                "Este software puede permitir controlar o transmitir la pantalla del equipo desde otro dispositivo. Conviene confirmar que lo instalaste y que reconocés sus conexiones y permisos.",
                 new[]
                 {
-                    "Comprobá si la aplicación asociada sigue instalada.",
-                    "Revisá Configuración > Aplicaciones > Inicio.",
-                    "Si confirmás que es una entrada obsoleta, utilizá las opciones de la aplicación o su desinstalador para quitarla."
+                    "Confirmá si instalaste Monect PC Remote o PC Remote Receiver y si lo utilizás para controlar el equipo desde un teléfono u otro dispositivo.",
+                    "Si lo reconocés y lo necesitás, revisá la configuración de conexión y permití el uso únicamente en las redes y dispositivos que correspondan.",
+                    "Si no lo reconocés, comprobá el editor y la ubicación del ejecutable asociado al servicio antes de tomar medidas.",
+                    "Si confirmás que no lo necesitás, desinstalá PC Remote Receiver desde Configuración > Aplicaciones > Aplicaciones instaladas; no borres el ejecutable ni el servicio manualmente."
                 },
                 null,
-                "No edites claves Run del Registro ni borres accesos directos sin identificar su programa asociado.",
-                new[] { new RecommendationSource("Microsoft Support: configurar aplicaciones de inicio", "https://support.microsoft.com/es-es/windows/configurar-las-aplicaciones-de-inicio-en-windows-115a420a-0bff-4a6f-90e0-1934c844e473") }));
+                "Los puertos TCP locales en escucha no prueban que el servicio sea accesible desde Internet. No clasifiques Monect como malware únicamente por el nombre del servicio o por los puertos que utiliza.",
+                new[] { MonectSource }));
         }
 
         if (allEvents.Contains("Kernel-Power", StringComparison.OrdinalIgnoreCase) &&
@@ -500,6 +541,79 @@ internal static class RecommendationEngine
         }
 
         return items.OrderBy(x => x.SortOrder).ThenBy(x => x.Title, StringComparer.CurrentCulture).ToList();
+    }
+
+    private static List<MissingStartupEntry> ExtractMissingStartupEntries(string details, string softwareInventory)
+    {
+        var result = new List<MissingStartupEntry>();
+        var sections = Regex.Matches(details,
+            @"(?ms)^=== (?<name>[^\r\n]+) ===\s*\r?\n(?<block>.*?)(?=^=== |\z)");
+
+        foreach (Match section in sections)
+        {
+            string block = section.Groups["block"].Value;
+            if (!block.Contains("El archivo no se encontró en la ruta indicada", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            string name = section.Groups["name"].Value.Trim();
+            string origin = Regex.Match(block, @"(?im)^\s*Origen:\s*(?<value>.+)$").Groups["value"].Value.Trim();
+            string executable = Regex.Match(block, @"(?im)^\s*Ejecutable referenciado:\s*(?<value>.+)$").Groups["value"].Value.Trim();
+            string related = FindRelatedInstalledSoftware(name, executable, softwareInventory);
+            result.Add(new MissingStartupEntry(
+                name,
+                string.IsNullOrWhiteSpace(origin) ? "Origen no informado" : origin,
+                string.IsNullOrWhiteSpace(executable) ? "Ruta no extraída" : executable,
+                related));
+        }
+
+        return result;
+    }
+
+    private static string FindRelatedInstalledSoftware(string name, string executable, string inventory)
+    {
+        string probe = name + " " + executable;
+        string[] lines = inventory.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+
+        string? MatchLine(params string[] terms) =>
+            lines.FirstOrDefault(line => terms.Any(term =>
+                line.Contains(term, StringComparison.OrdinalIgnoreCase) &&
+                !line.Contains("Programas inventariados:", StringComparison.OrdinalIgnoreCase) &&
+                !line.Contains("APLICACIONES INSTALADAS", StringComparison.OrdinalIgnoreCase));
+
+        if (probe.Contains("Opera", StringComparison.OrdinalIgnoreCase))
+        {
+            string? found = MatchLine("Opera GX");
+            return found is null
+                ? "No aparece una coincidencia Opera GX en la muestra del inventario (esto no confirma que esté desinstalado)."
+                : "Coincidencia en inventario: " + found.Trim() + ". La aplicación figura instalada; la ruta de inicio concreta no existe.";
+        }
+
+        if (probe.Contains("Roblox", StringComparison.OrdinalIgnoreCase))
+        {
+            string? found = MatchLine("Roblox");
+            return found is null
+                ? "No aparece una coincidencia Roblox en la muestra del inventario (esto no confirma que esté desinstalado)."
+                : "Coincidencia en inventario: " + found.Trim() + ". La aplicación figura instalada; la ruta de inicio concreta no existe.";
+        }
+
+        if (probe.Contains("Nefarius", StringComparison.OrdinalIgnoreCase) ||
+            probe.Contains("DsHidMini", StringComparison.OrdinalIgnoreCase))
+        {
+            string? found = MatchLine("Nefarius", "DsHidMini");
+            return found is null
+                ? "No aparece una coincidencia Nefarius/DsHidMini en la muestra del inventario (esto no confirma que esté desinstalado)."
+                : "Coincidencia en inventario: " + found.Trim() + ". El componente o paquete relacionado figura instalado; verificá la versión y la ruta del actualizador.";
+        }
+
+        if (probe.Contains("AMDNoiseSuppression", StringComparison.OrdinalIgnoreCase))
+        {
+            string? found = MatchLine("AMD");
+            return found is null
+                ? "No aparece software AMD en la muestra del inventario."
+                : "Coincidencia de fabricante en inventario: " + found.Trim() + ". Esto no confirma que AMD Noise Suppression esté instalado ni que ese ejecutable sea necesario.";
+        }
+
+        return "No se identificó una aplicación asociada con suficiente precisión en la muestra del inventario.";
     }
 
     private static bool IsSfcIntegrityViolation(string text)

@@ -175,50 +175,74 @@ function Test-ImportantDiagnosticEvent($e) {
   return $false
 }
 try {
-  $app = @(Get-WinEvent -FilterHashtable @{LogName='Application';Id=474,1000,1001,1002;StartTime=$since} -MaxEvents 500 -ErrorAction SilentlyContinue)
-  $sys = @(Get-WinEvent -FilterHashtable @{LogName='System';Id=7,41,51,55,98,1001,129,140,153,6008} -MaxEvents 500 -ErrorAction SilentlyContinue |
-    Where-Object { $_.ProviderName -notmatch 'Kernel-Processor-Power|Kernel-Boot|Hyper-V-Hypervisor' })
-  $importantApp = @($app | Where-Object {
-    (Test-ImportantDiagnosticEvent $_) -or
-    ($_.ProviderName -match 'Application Error|Application Hang' -and $_.Id -in 1000,1002)
-  })
+  # Each event family has its own limit. A high-volume provider such as ESENT
+  # can no longer consume the entire sample and hide NTFS, storage or BugCheck events.
+  $definitions = @(
+    @{ Name='ESENT 474'; LogName='Application'; Ids=@(474); Limit=120; Provider='ESENT' },
+    @{ Name='Errores de aplicaciones'; LogName='Application'; Ids=@(1000,1001,1002); Limit=120; Provider='Application Error|Application Hang|Windows Error Reporting|WER' },
+    @{ Name='NTFS'; LogName='System'; Ids=@(55,98,140); Limit=120; Provider='Ntfs' },
+    @{ Name='Almacenamiento'; LogName='System'; Ids=@(7,11,15,51,129,153,157); Limit=120; Provider='Disk|storahci|stornvme|storport' },
+    @{ Name='WHEA'; LogName='System'; Ids=@(1,17,18,19,20,46,47); Limit=120; Provider='WHEA' },
+    @{ Name='Apagados y bugchecks'; LogName='System'; Ids=@(41,6008,1001); Limit=120; Provider='Kernel-Power|EventLog|BugCheck|WER-SystemErrorReporting|Windows Error Reporting' }
+  )
+  $records = New-Object System.Collections.Generic.List[object]
+  $saturated = New-Object System.Collections.Generic.List[string]
+  foreach ($definition in $definitions) {
+    $query = @(Get-WinEvent -FilterHashtable @{
+      LogName=$definition.LogName
+      Id=$definition.Ids
+      StartTime=$since
+    } -MaxEvents ($definition.Limit + 1) -ErrorAction SilentlyContinue)
+    $matching = @($query | Where-Object { $_.ProviderName -match $definition.Provider })
+    foreach ($event in @($matching | Select-Object -First $definition.Limit)) {
+      $records.Add($event)
+    }
+    "Grupo consultado: $($definition.Name) | Registros incluidos: $([math]::Min($matching.Count,$definition.Limit)) | Límite: $($definition.Limit)"
+    if ($query.Count -gt $definition.Limit) {
+      $saturated.Add($definition.Name)
+    }
+  }
+  $events = @($records | Group-Object { "$($_.LogName)|$($_.RecordId)" } | ForEach-Object { $_.Group[0] })
+  $app = @($events | Where-Object { $_.LogName -eq 'Application' })
+  $sys = @($events | Where-Object { $_.LogName -eq 'System' })
   $importantSystem = @($sys | Where-Object { Test-ImportantDiagnosticEvent $_ })
-  "Eventos de aplicaciones consultados: $($app.Count)"
-  "Eventos del sistema consultados: $($sys.Count)"
-  "Eventos de sistema/almacenamiento/hardware que requieren contexto: $($importantSystem.Count)"
-  if (($app.Count + $sys.Count) -eq 0) {
-    '[OK] No se encontraron eventos de estas categorías en los últimos 30 días.'
+  "Registros de aplicaciones incluidos en las muestras: $($app.Count)"
+  "Registros del sistema incluidos en las muestras: $($sys.Count)"
+  "Eventos del sistema/almacenamiento/hardware relevantes incluidos: $($importantSystem.Count)"
+  if ($events.Count -eq 0) {
+    '[OK] No se encontraron eventos de las categorías consultadas en los últimos 30 días.'
   } else {
     '=== EVENTOS DE APLICACIONES ==='
-    foreach ($g in ($app | Group-Object ProviderName,Id | Sort-Object Count -Descending | Select-Object -First 20)) {
+    foreach ($g in ($app | Group-Object ProviderName,Id | Sort-Object Count -Descending | Select-Object -First 30)) {
       $e = $g.Group | Sort-Object TimeCreated -Descending | Select-Object -First 1
       $msg = ($e.Message -replace '\s+',' ').Trim()
       if ($msg.Length -gt 260) { $msg = $msg.Substring(0,260) + '…' }
       $repeatedCrash = ($e.ProviderName -match 'Application Error|Application Hang' -and $g.Count -ge 3)
-      $tag = if (Test-ImportantDiagnosticEvent $e) { 'AVISO' } elseif ($repeatedCrash) { 'AVISO' } else { 'INFO' }
-      "[$tag] $($e.ProviderName) | Evento $($e.Id) | Repeticiones: $($g.Count) | Último: $($e.TimeCreated) | $msg"
+      $tag = if ((Test-ImportantDiagnosticEvent $e) -or $repeatedCrash) { 'AVISO' } else { 'INFO' }
+      "[$tag] $($e.ProviderName) | Evento $($e.Id) | Registros en muestra: $($g.Count) | Último: $($e.TimeCreated) | $msg"
     }
     '=== EVENTOS DEL SISTEMA ==='
-    foreach ($g in ($sys | Group-Object ProviderName,Id | Sort-Object Count -Descending | Select-Object -First 25)) {
+    foreach ($g in ($sys | Group-Object ProviderName,Id | Sort-Object Count -Descending | Select-Object -First 35)) {
       $e = $g.Group | Sort-Object TimeCreated -Descending | Select-Object -First 1
       $msg = ($e.Message -replace '\s+',' ').Trim()
       if ($msg.Length -gt 260) { $msg = $msg.Substring(0,260) + '…' }
       $tag = if (Test-ImportantDiagnosticEvent $e) { 'AVISO' } else { 'INFO' }
-      "[$tag] $($e.ProviderName) | Evento $($e.Id) | Repeticiones: $($g.Count) | Último: $($e.TimeCreated) | $msg"
+      "[$tag] $($e.ProviderName) | Evento $($e.Id) | Registros en muestra: $($g.Count) | Último: $($e.TimeCreated) | $msg"
     }
     if ($importantSystem.Count -gt 0) {
       '[AVISO] Se identificaron eventos específicos de almacenamiento, sistema de archivos, hardware o apagado inesperado.'
     } else {
-      '[INFO] No se detectaron patrones de error de almacenamiento o hardware entre los eventos filtrados.'
-    }
-    if ($app.Count -ge 500 -or $sys.Count -ge 500) {
-      '[INFO] La consulta alcanzó el límite de muestra de 500 eventos; las cantidades no representan necesariamente el total del período.'
+      '[INFO] No se detectaron patrones de error de almacenamiento o hardware entre las categorías de sistema consultadas.'
     }
   }
+  if ($saturated.Count -gt 0) {
+    '[INFO] Límite de muestra alcanzado en: ' + ($saturated -join ', ') + '. Los registros mostrados son una muestra mínima observada; el total real del período puede ser mayor.'
+  } else {
+    '[INFO] Ninguna de las consultas independientes alcanzó su límite de muestra.'
+  }
 } catch { "[NO VERIFICADO] No se pudo consultar el historial de confiabilidad: $($_.Exception.Message)" }
-'Los eventos informativos de inicialización de VBS, Hyper-V y administración de energía del procesador no se clasifican como fallos.'
+'Los eventos informativos de inicialización de VBS, Hyper-V y administración de energía del procesador no se clasifican como fallos. Las cantidades se refieren a muestras por categoría, no a un recuento exhaustivo del registro.'
 """, TimeSpan.FromSeconds(180)),
-
         new("software-inventory", "Rendimiento", "Inventario de programas instalados", """
 $ErrorActionPreference = 'Continue'
 try {
