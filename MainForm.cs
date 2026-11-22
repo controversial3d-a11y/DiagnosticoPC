@@ -565,7 +565,13 @@ internal sealed class MainForm : Form
         overviewOutput.Clear();
         var important = value.Entries
             .Where(x => x.Level is FindingLevel.Critical or FindingLevel.Warning or FindingLevel.NotVerified)
-            .OrderByDescending(x => x.Level)
+            .OrderBy(x => x.Level switch
+            {
+                FindingLevel.Critical => 0,
+                FindingLevel.Warning => 1,
+                FindingLevel.NotVerified => 2,
+                _ => 3
+            })
             .ToList();
 
         if (important.Count == 0)
