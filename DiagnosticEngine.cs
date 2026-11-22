@@ -79,7 +79,7 @@ $cpu | Select-Object Name,Manufacturer,NumberOfCores,NumberOfLogicalProcessors,M
 '=== PLACA MADRE ==='
 $board | Select-Object Manufacturer,Product,Version,SerialNumber | Format-List | Out-String -Width 200
 '=== BIOS / UEFI ==='
-$bios | Select-Object Manufacturer,SMBIOSBIOSVersion,ReleaseDate,SM BIOSPresent | Format-List | Out-String -Width 200
+$bios | Select-Object Manufacturer,SMBIOSBIOSVersion,ReleaseDate | Format-List | Out-String -Width 200
 '=== IDENTIFICACIÓN DEL EQUIPO ==='
 $product | Select-Object Vendor,Name,Version,UUID | Format-List | Out-String -Width 200
 """, TimeSpan.FromSeconds(60)),
@@ -394,6 +394,7 @@ $ErrorActionPreference = 'Continue'
 
     public async Task<DiagnosticReport> RunAsync(
         IProgress<DiagnosticProgress>? progress,
+        IProgress<DiagnosticEntry>? entryProgress,
         CancellationToken cancellationToken)
     {
         bool elevated = IsAdministrator();
@@ -409,11 +410,13 @@ $ErrorActionPreference = 'Continue'
             if (check.RequiresAdmin && !elevated)
             {
                 timer.Stop();
-                report.Entries.Add(new DiagnosticEntry(
+                var skipped = new DiagnosticEntry(
                     check.Id, check.Area, check.Title, FindingLevel.NotVerified,
                     "No se ejecutó porque esta sesión no tiene permisos de administrador. " +
                     "No es un error del sistema: la prueba requiere elevación voluntaria para poder verificarlo.",
-                    timer.Elapsed, null, false));
+                    timer.Elapsed, null, false);
+                report.Entries.Add(skipped);
+                entryProgress?.Report(skipped);
             }
             else
             {
@@ -439,9 +442,11 @@ $ErrorActionPreference = 'Continue'
                 }
 
                 var level = Evaluate(check.Id, details, command);
-                report.Entries.Add(new DiagnosticEntry(
+                var entry = new DiagnosticEntry(
                     check.Id, check.Area, check.Title, level, details,
-                    timer.Elapsed, command.ExitCode, command.TimedOut));
+                    timer.Elapsed, command.ExitCode, command.TimedOut);
+                report.Entries.Add(entry);
+                entryProgress?.Report(entry);
             }
 
             completed++;
