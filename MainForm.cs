@@ -475,8 +475,8 @@ internal sealed class MainForm : Form
                     : $"Prueba {Math.Min(p.Completed + 1, p.Total)} de {p.Total}: {p.CurrentTitle}";
             });
 
-            report = await engine.RunAsync(progress, cancellation.Token);
-            foreach (var entry in report.Entries) AppendEntry(entry);
+            var entryProgress = new Progress<DiagnosticEntry>(entry => AppendEntry(entry));
+            report = await engine.RunAsync(progress, entryProgress, cancellation.Token);
             RefreshDashboard(report);
             exportButton.Enabled = report.Entries.Count > 0;
             progressBar.Value = report.Cancelled ? Math.Min(progressBar.Value, 99) : 100;
@@ -585,7 +585,7 @@ internal sealed class MainForm : Form
             }
         }
 
-        if (value.Entries.Any(x => x.Id is "dism" or "sfc" && x.Level == FindingLevel.NotVerified))
+        if (value.Entries.Any(x => (x.Id is "dism" or "sfc") && x.Level == FindingLevel.NotVerified))
         {
             overviewOutput.AppendText("\\r\\nAlgunas pruebas de integridad requieren iniciar la aplicación como administrador y volver a ejecutar el análisis.");
         }
