@@ -112,7 +112,14 @@ internal sealed class MainForm : Form
 
     private async Task<string> PowerShell(string script, int timeoutMs = 60000)
     {
-        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        // Evita que PowerShell envíe progreso en formato CLIXML y fuerza UTF-8 real
+        // para conservar tildes, eñes y caracteres del informe.
+        string preparedScript =
+            "$ProgressPreference = 'SilentlyContinue'\r\n" +
+            "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)\r\n" +
+            "$OutputEncoding = New-Object System.Text.UTF8Encoding($false)\r\n" +
+            script;
+        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(preparedScript));
         return await RunProcess("powershell.exe",
             "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + encoded,
             timeoutMs);
@@ -145,8 +152,14 @@ internal sealed class MainForm : Form
             var result = await stdout;
             var error = await stderr;
             if (string.IsNullOrWhiteSpace(result)) result = error;
-            else if (!string.IsNullOrWhiteSpace(error)) result += Environment.NewLine + error;
-            return string.IsNullOrWhiteSpace(result) ? "(Sin datos devueltos)" : result.Trim();
+            else if (!string.IsNullOrWhiteSpace(error) && !error.Contains("#< CLIXML", StringComparison.OrdinalIgnoreCase))
+                result += Environment.NewLine + error;
+
+            // Elimina cualquier bloque de progreso serializado que pudiera emitir Windows PowerShell.
+            int clixml = result.IndexOf("#< CLIXML", StringComparison.OrdinalIgnoreCase);
+            if (clixml >= 0) result = result[..clixml].Trim();
+
+            return string.IsNullOrWhiteSpace(result) ? "(La consulta no devolvió datos.)" : result.Trim();
         }
         catch (Exception ex) { return "No se pudo ejecutar la consulta: " + ex.Message; }
     }
