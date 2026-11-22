@@ -170,7 +170,10 @@ internal sealed class MainForm : Form
         Append(title + "\r\n");
         Append("Consultando...\r\n");
         status.Text = "Ejecutando: " + title;
+        var timer = Stopwatch.StartNew();
         var result = await PowerShell(script, timeoutMs);
+        timer.Stop();
+        result += "\r\nDuración de esta prueba: " + timer.Elapsed.ToString(@"mm\:ss");
         var marker = "Consultando...\r\n";
         var text = output.Text;
         int idx = text.LastIndexOf(marker, StringComparison.Ordinal);
@@ -217,8 +220,11 @@ Get-CimInstance Win32_VideoController | Format-List Name,DriverVersion,AdapterRA
 Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID,VolumeName,FileSystem,@{N='TotalGB';E={[math]::Round($_.Size/1GB,1)}},@{N='LibreGB';E={[math]::Round($_.FreeSpace/1GB,1)}},@{N='LibrePorcentaje';E={if($_.Size){[math]::Round($_.FreeSpace/$_.Size*100,1)}else{0}}} | Format-Table -AutoSize
 ");
 
-        await Section("5. PROCESOS CON MAYOR USO DE CPU", @"
-Get-Process | Sort-Object CPU -Descending | Select-Object -First 12 ProcessName,Id,@{N='CPU_s';E={[math]::Round($_.CPU,1)}},@{N='RAM_MB';E={[math]::Round($_.WorkingSet64/1MB,1)}} | Format-Table -AutoSize
+        await Section("5. PROCESOS Y APLICACIONES DE INICIO", @"
+'Procesos con mayor memoria utilizada:'
+Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 20 ProcessName,Id,@{N='RAM_MB';E={[math]::Round($_.WorkingSet64/1MB,1)}},@{N='CPU_acumulada_s';E={if($_.CPU){[math]::Round($_.CPU,1)}else{0}}} | Format-Table -AutoSize
+'Aplicaciones configuradas para iniciar con Windows:'
+Get-CimInstance Win32_StartupCommand | Select-Object Name,Command,Location,User | Format-List
 ");
 
         await Section("6. MICROSOFT DEFENDER", @"
@@ -234,12 +240,29 @@ try { Get-NetFirewallProfile | Format-Table Name,Enabled,DefaultInboundAction,De
 catch { 'No se pudo consultar Firewall: ' + $_.Exception.Message }
 ");
 
-        await Section("8. ARRANQUE SEGURO (SECURE BOOT)", @"
+        await Section("8. ESTADO FÍSICO Y SALUD DE LOS DISCOS", @"
+'Unidades físicas detectadas:'
+try {
+  Get-PhysicalDisk | Select-Object FriendlyName,MediaType,BusType,HealthStatus,OperationalStatus,@{N='TamañoGB';E={[math]::Round($_.Size/1GB,1)}} | Format-Table -AutoSize
+} catch { 'Estado de almacenamiento no disponible: ' + $_.Exception.Message }
+'Indicadores de fallo predictivo SMART (si el controlador los expone):'
+try {
+  Get-CimInstance -Namespace root/wmi -ClassName MSStorageDriver_FailurePredictStatus -ErrorAction Stop | Select-Object InstanceName,PredictFailure,Reason | Format-Table -AutoSize
+} catch { 'El controlador no expone indicadores SMART por esta interfaz.' }
+", 90000);
+
+        await Section("9. CONTROLADORES CON ESTADO ANORMAL", @"
+$bad = Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue | Where-Object { $_.ConfigManagerErrorCode -ne 0 }
+if ($bad) { $bad | Select-Object Name,Manufacturer,ConfigManagerErrorCode,Status | Format-Table -AutoSize }
+else { 'No se detectaron dispositivos con código de error en el Administrador de dispositivos.' }
+", 90000);
+
+        await Section("10. ARRANQUE SEGURO (SECURE BOOT)", @"
 try { 'Secure Boot habilitado: ' + (Confirm-SecureBootUEFI) }
 catch { 'No disponible o no compatible en esta sesión: ' + $_.Exception.Message }
 ");
 
-        await Section("9. RED Y WI-FI (SIN CONTRASEÑAS)", @"
+        await Section("11. RED Y WI-FI (SIN CONTRASEÑAS)", @"
 Get-NetAdapter | Select-Object Name,InterfaceDescription,Status,LinkSpeed,MacAddress | Format-Table -AutoSize
 'Configuración IP:'
 Get-NetIPConfiguration | Format-List InterfaceAlias,IPv4Address,IPv4DefaultGateway,DNSServer
@@ -251,15 +274,31 @@ try { Resolve-DnsName microsoft.com -ErrorAction Stop | Select-Object -First 3 N
 Test-Connection 1.1.1.1 -Count 2 -ErrorAction SilentlyContinue | Select-Object Address,ResponseTime,Status | Format-Table -AutoSize
 ", 90000);
 
-        await Section("10. INTEGRIDAD DE COMPONENTES WINDOWS (DISM CHECKHEALTH)", @"
-DISM.exe /Online /Cleanup-Image /CheckHealth
-", 180000);
+        await Section("12. DIAGNÓSTICO PROFUNDO DE COMPONENTES WINDOWS (DISM SCANHEALTH)", @"
+'DISM ScanHealth inspecciona el almacén de componentes. No ejecuta RestoreHealth ni realiza reparaciones.'
+DISM.exe /Online /Cleanup-Image /ScanHealth
+", 900000);
 
-        await Section("11. VERIFICACIÓN DE ARCHIVOS DEL SISTEMA (SFC VERIFYONLY)", @"
+        await Section("13. VERIFICACIÓN COMPLETA DE ARCHIVOS PROTEGIDOS (SFC VERIFYONLY)", @"
+' SFC VerifyOnly comprueba archivos protegidos sin intentar repararlos.'
 sfc.exe /verifyonly
-", 300000);
+", 900000);
+
+        await Section("14. ERRORES RECIENTES DE WINDOWS (ÚLTIMOS 7 DÍAS)", @"
+$since = (Get-Date).AddDays(-7)
+try {
+  Get-WinEvent -FilterHashtable @{LogName='System'; Level=1,2; StartTime=$since} -MaxEvents 40 -ErrorAction Stop |
+    Select-Object TimeCreated,ProviderName,Id,LevelDisplayName,@{N='Mensaje';E={($_.Message -replace '\\s+',' ').Substring(0,[Math]::Min(260,($_.Message -replace '\\s+',' ').Length))}} |
+    Format-List
+} catch { 'No se encontraron eventos críticos/errores o no se pudo leer el registro: ' + $_.Exception.Message }
+", 120000);
+
+        await Section("15. ACTUALIZACIONES INSTALADAS RECIENTEMENTE", @"
+Get-HotFix -ErrorAction SilentlyContinue | Sort-Object InstalledOn -Descending | Select-Object -First 15 HotFixID,Description,InstalledOn,InstalledBy | Format-Table -AutoSize
+", 120000);
 
         Append("\r\nFIN DEL DIAGNÓSTICO.\r\n");
+        Append("El análisis incluye comprobaciones profundas que pueden tardar varios minutos. DISM ScanHealth y SFC VerifyOnly verifican el sistema sin ejecutar reparaciones.\r\n");
         Append("Importante: un resultado sin errores en estas consultas no garantiza ausencia total de malware. Para un análisis antimalware profundo, ejecutá un examen completo o sin conexión desde Seguridad de Windows.\r\n");
         status.Text = "Diagnóstico finalizado. Podés exportar el informe.";
         exportButton.Enabled = true;
