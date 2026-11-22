@@ -578,7 +578,7 @@ internal static class RecommendationEngine
             lines.FirstOrDefault(line => terms.Any(term =>
                 line.Contains(term, StringComparison.OrdinalIgnoreCase) &&
                 !line.Contains("Programas inventariados:", StringComparison.OrdinalIgnoreCase) &&
-                !line.Contains("APLICACIONES INSTALADAS", StringComparison.OrdinalIgnoreCase));
+                !line.Contains("APLICACIONES INSTALADAS", StringComparison.OrdinalIgnoreCase)));
 
         if (probe.Contains("Opera", StringComparison.OrdinalIgnoreCase))
         {
