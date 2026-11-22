@@ -112,8 +112,9 @@ internal sealed class MainForm : Form
 
     private async Task<string> PowerShell(string script, int timeoutMs = 60000)
     {
+        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
         return await RunProcess("powershell.exe",
-            "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command " + Quote(script),
+            "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + encoded,
             timeoutMs);
     }
 
@@ -246,7 +247,7 @@ sfc.exe /verifyonly
 ", 300000);
 
         Append("\r\nFIN DEL DIAGNÓSTICO.\r\n");
-        Append("Importante: un resultado sin errores en estas consultas no garantiza ausencia total de malware. Para un análisis antimalware profundo, ejecutá un examen completo u офлайн desde Seguridad de Windows.\r\n");
+        Append("Importante: un resultado sin errores en estas consultas no garantiza ausencia total de malware. Para un análisis antimalware profundo, ejecutá un examen completo o sin conexión desde Seguridad de Windows.\r\n");
         status.Text = "Diagnóstico finalizado. Podés exportar el informe.";
         exportButton.Enabled = true;
         runButton.Enabled = true;
