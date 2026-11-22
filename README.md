@@ -21,7 +21,7 @@ Aplicación de escritorio para Windows 11 x64. Ejecuta diagnósticos locales de 
 
 La aplicación está diseñada para consultar el estado del equipo. No incluye funciones para limpiar, reparar, optimizar automáticamente, instalar/desinstalar, borrar, mover o modificar archivos personales; tampoco cambia registro, servicios, DNS, Wi-Fi, Firewall, controladores o políticas de Windows.
 
-No inicia análisis antivirus ni pone archivos en cuarentena. Consulta el estado y el historial que Microsoft Defender expone. No obtiene contraseñas Wi-Fi, claves de BitLocker ni claves privadas. No transmite informes ni datos a servidores. Los informes solo se guardan cuando el usuario elige explícitamente una ruta de exportación.
+No inicia análisis antivirus ni pone archivos en cuarentena. Consulta el estado y el historial que Microsoft Defender expone. No obtiene contraseñas Wi-Fi, claves de BitLocker ni claves privadas. No transmite informes ni recopila telemetría. Solo realiza pruebas de conectividad a los destinos indicados en la sección Red. Los informes solo se guardan cuando el usuario elige explícitamente una ruta de exportación.
 
 El botón de administrador solicita elevación de forma explícita mediante UAC. No eleva privilegios automáticamente. Si se ejecuta sin privilegios, las pruebas que requieren administrador se marcan como **No verificadas**, no como fallas.
 
