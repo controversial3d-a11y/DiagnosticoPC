@@ -392,7 +392,7 @@ internal sealed class MainForm : Form
         layout.Controls.Add(summary, 0, 2);
         layout.Controls.Add(detailsPanel, 0, 3);
         panel.Controls.Add(layout);
-        AddMetricCards(0, 0, 0, 0);
+        AddMetricCards(0, 0, 0, 0, 0);
         return panel;
     }
 
@@ -441,6 +441,7 @@ internal sealed class MainForm : Form
         if (!pages.TryGetValue(name, out var selected)) return;
         foreach (var pair in pages) pair.Value.Visible = pair.Key == name;
         selected.BringToFront();
+        if (name != "Inicio") RenderPage(PageKeyFromNavigation(name));
 
         pageTitle.Text = name switch
         {
@@ -558,6 +559,17 @@ internal sealed class MainForm : Form
         RefreshDashboardFromEntries();
     }
 
+    private static string PageKeyFromNavigation(string name) => name switch
+    {
+        "Hardware" => "Hardware y almacenamiento",
+        "Seguridad" => "Seguridad",
+        "Red" => "Red y conectividad",
+        "Windows" => "Windows y estabilidad",
+        "Rendimiento" => "Rendimiento",
+        "Dispositivos" => "Dispositivos y controladores",
+        _ => name
+    };
+
     private static string PageKey(string area) => area switch
     {
         "Hardware" or "Almacenamiento" => "Hardware y almacenamiento",
@@ -645,7 +657,8 @@ internal sealed class MainForm : Form
         int warnings = liveEntries.Count(x => x.Level == FindingLevel.Warning);
         int critical = liveEntries.Count(x => x.Level == FindingLevel.Critical);
         int notVerified = liveEntries.Count(x => x.Level == FindingLevel.NotVerified);
-        AddMetricCards(ok, warnings, critical, notVerified);
+        int info = liveEntries.Count(x => x.Level == FindingLevel.Info);
+        AddMetricCards(ok, warnings, critical, notVerified, info);
 
         var important = liveEntries
             .Where(x => x.Level is FindingLevel.Critical or FindingLevel.Warning or FindingLevel.NotVerified)
@@ -664,7 +677,8 @@ internal sealed class MainForm : Form
         int warnings = value.Entries.Count(x => x.Level == FindingLevel.Warning);
         int critical = value.Entries.Count(x => x.Level == FindingLevel.Critical);
         int notVerified = value.Entries.Count(x => x.Level == FindingLevel.NotVerified);
-        AddMetricCards(ok, warnings, critical, notVerified);
+        int info = value.Entries.Count(x => x.Level == FindingLevel.Info);
+        AddMetricCards(ok, warnings, critical, notVerified, info);
 
         string general = critical > 0
             ? $"Se detectaron {critical} resultado(s) crítico(s). Revisá esos puntos primero."
@@ -731,7 +745,7 @@ internal sealed class MainForm : Form
         _ => 4
     };
 
-    private void AddMetricCards(int ok, int warnings, int critical, int notVerified)
+    private void AddMetricCards(int ok, int warnings, int critical, int notVerified, int info)
     {
         metricPanel.SuspendLayout();
         metricPanel.Controls.Clear();
@@ -739,6 +753,7 @@ internal sealed class MainForm : Form
         metricPanel.Controls.Add(CreateMetricCard("OBSERVACIONES", warnings.ToString(), "Conviene revisarlas", Warning));
         metricPanel.Controls.Add(CreateMetricCard("CRÍTICAS", critical.ToString(), "Prioridad alta", Danger));
         metricPanel.Controls.Add(CreateMetricCard("NO VERIFICADAS", notVerified.ToString(), "Sin conclusión disponible", Muted));
+        metricPanel.Controls.Add(CreateMetricCard("INFORMATIVAS", info.ToString(), "Datos sin evaluación", Accent));
         metricPanel.ResumeLayout();
     }
 
@@ -746,7 +761,7 @@ internal sealed class MainForm : Form
     {
         var card = new Panel
         {
-            Width = 202,
+            Width = 188,
             Height = 94,
             BackColor = Surface,
             Margin = new Padding(0, 0, 12, 0),
@@ -832,7 +847,8 @@ internal sealed class MainForm : Form
         sb.AppendLine("Resultado: " + (value.Cancelled ? "Parcial — análisis cancelado" : "Análisis finalizado"));
         sb.AppendLine();
         sb.AppendLine("RESUMEN EJECUTIVO");
-        sb.AppendLine($"Correctas: {ok}  |  Observaciones: {warnings}  |  Críticas: {critical}  |  No verificadas: {notVerified}");
+        int info = value.Entries.Count(x => x.Level == FindingLevel.Info);
+        sb.AppendLine($"Correctas: {ok}  |  Observaciones: {warnings}  |  Críticas: {critical}  |  No verificadas: {notVerified}  |  Informativas: {info}");
         sb.AppendLine(OverallText(critical, warnings, notVerified, value.Cancelled));
         sb.AppendLine();
 
@@ -901,6 +917,7 @@ internal sealed class MainForm : Form
         int warnings = value.Entries.Count(x => x.Level == FindingLevel.Warning);
         int critical = value.Entries.Count(x => x.Level == FindingLevel.Critical);
         int notVerified = value.Entries.Count(x => x.Level == FindingLevel.NotVerified);
+        int info = value.Entries.Count(x => x.Level == FindingLevel.Info);
         string verdictCss = critical > 0 ? "critical" : warnings > 0 ? "warning" : notVerified > 0 ? "pending" : "ok";
 
         sb.Append("""
@@ -941,6 +958,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:9px 0 0;padding:12px;bord
         AddHtmlMetric(sb, "OBSERVACIONES", warnings, "warning");
         AddHtmlMetric(sb, "CRÍTICAS", critical, "critical");
         AddHtmlMetric(sb, "NO VERIFICADAS", notVerified, "pending");
+        AddHtmlMetric(sb, "INFORMATIVAS", info, "info");
         sb.Append("</div>");
 
         var priority = value.Entries.Where(x => x.Level is FindingLevel.Critical or FindingLevel.Warning or FindingLevel.NotVerified)
