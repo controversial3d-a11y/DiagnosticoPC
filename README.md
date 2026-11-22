@@ -5,17 +5,17 @@ Aplicación de escritorio para Windows 11 x64. Ejecuta diagnósticos locales de 
 ## Características
 
 - Interfaz en español con secciones independientes, progreso, cancelación y resumen de hallazgos.
-- Inventario de Windows, equipo, BIOS/UEFI, placa madre, CPU, RAM, GPU y monitores.
+- Inventario de Windows, equipo, BIOS/UEFI, placa madre, CPU, módulos RAM, GPU y monitores. Consulta zonas térmicas ACPI únicamente cuando el firmware las expone.
 - Procesos ordenados por memoria y tiempo de CPU acumulado, con aclaración de que este último no es consumo instantáneo.
-- Aplicaciones configuradas para iniciarse con Windows: solo lectura, sin deshabilitarlas.
+- Aplicaciones configuradas para iniciarse con Windows, agrupadas por tipo e identificando utilidades de acceso remoto para revisión: solo lectura, sin deshabilitarlas.
 - Volúmenes, espacio libre, discos físicos, estado que expone Storage y contadores de fiabilidad/SMART cuando están disponibles.
 - Dispositivos con códigos de error del Administrador de dispositivos, con explicación de códigos habituales.
 - Microsoft Defender: estado de protección, firmas, fechas de análisis y detecciones registradas que expone el producto.
 - Firewall de Windows, TPM, Secure Boot, BitLocker (sin consultar claves de recuperación), UAC, SmartScreen y VBS cuando Windows permite consultarlos.
-- Ethernet, Wi-Fi, configuración IP, DNS, proxy, conectividad ICMP/HTTPS y puertos locales en escucha.
+- Ethernet, Wi-Fi, configuración IP, DNS, proxy, conectividad ICMP/HTTPS y puertos locales en escucha asociados a procesos cuando Windows permite consultarlos.
 - Servicios relevantes, registros de eventos System/Application de los últimos siete días, actualizaciones instaladas y reinicio pendiente.
 - DISM ScanHealth, SFC VerifyOnly y CHKDSK /scan, disponibles únicamente al ejecutar voluntariamente como administrador.
-- Exportación HTML imprimible y TXT. El anonimizado de datos está activado por defecto al exportar.
+- Exportación HTML imprimible y TXT. El HTML puede imprimirse o guardarse como PDF desde el navegador. El anonimizado de datos está activado por defecto al exportar.
 
 ## Seguridad y privacidad
 
