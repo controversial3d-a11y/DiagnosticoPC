@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -27,3 +27,15 @@ jobs:
           path: bin/Release/net8.0-windows/win-x64/publish/DiagnosticoPC.exe
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish downloadable GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: DiagnosticoPC v1.0.${{ github.run_number }}
+          body: |
+            Ejecutable portable para Windows 11 x64.
+            Descargá DiagnosticoPC.exe y ejecutalo. No requiere instalación.
+            Aplicación de diagnóstico de solo lectura.
+          files: bin/Release/net8.0-windows/win-x64/publish/DiagnosticoPC.exe
+          make_latest: true
