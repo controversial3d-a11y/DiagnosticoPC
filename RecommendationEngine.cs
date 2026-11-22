@@ -358,8 +358,14 @@ internal static class RecommendationEngine
                 new[] { SmartScreenSource }));
         }
 
-        if ((Details("startup") + Details("network") + Details("services"))
-            .Contains("AnyDesk", StringComparison.OrdinalIgnoreCase))
+        string startupDetails = Details("startup");
+        string networkDetails = Details("network");
+        string serviceDetails = Details("services");
+        bool anyDeskFound =
+            startupDetails.Contains("AnyDesk", StringComparison.OrdinalIgnoreCase) ||
+            Regex.IsMatch(networkDetails, @"(?im)^.*\|\s*PID\s+\d+\s*\|\s*AnyDesk(?:\s*\||\s*$)") ||
+            Regex.IsMatch(serviceDetails, @"(?im)^\s*AnyDesk\s+\|.*\|\s*Estado:");
+        if (anyDeskFound)
         {
             items.Add(new(
                 "remote-access", 110, "MEDIA", "Verificar el acceso remoto de AnyDesk",
@@ -491,10 +497,13 @@ internal static class RecommendationEngine
                 new[] { new RecommendationSource("Microsoft Support: configurar las aplicaciones de inicio en Windows", "https://support.microsoft.com/es-es/windows/configurar-las-aplicaciones-de-inicio-en-windows-115a420a-0bff-4a6f-90e0-1934c844e473") }));
         }
 
-        string remoteEvidence = Details("startup") + Environment.NewLine +
-            Details("network") + Environment.NewLine + Details("services");
-        if (remoteEvidence.Contains("MonectServerService", StringComparison.OrdinalIgnoreCase) ||
-            remoteEvidence.Contains("PC Remote Receiver", StringComparison.OrdinalIgnoreCase))
+        bool monectFound =
+            startupDetails.Contains("MonectServerService", StringComparison.OrdinalIgnoreCase) ||
+            startupDetails.Contains("PC Remote Receiver", StringComparison.OrdinalIgnoreCase) ||
+            Regex.IsMatch(networkDetails, @"(?im)^.*\|\s*PID\s+\d+\s*\|\s*MonectServerService(?:\s*\||\s*$)") ||
+            Regex.IsMatch(serviceDetails, @"(?im)^\s*MonectServerService\s+\|.*\|\s*Estado:") ||
+            Regex.IsMatch(serviceDetails, @"(?im)^\s*\S+\s+\|\s*PC Remote Receiver[^|]*\|\s*Estado:");
+        if (monectFound)
         {
             items.Add(new(
                 "remote-access-monect", 111, "MEDIA", "Verificar Monect PC Remote / PC Remote Receiver",
