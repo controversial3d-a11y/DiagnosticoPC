@@ -212,7 +212,7 @@ internal sealed class MainForm : Form
         pageTitle.AutoSize = true;
         pageTitle.Location = new Point(0, 0);
 
-        pageSubtitle.Text = "Diagnóstico técnico local · Windows 11";
+        pageSubtitle.Text = "Auditoría local avanzada · Windows 10/11";
         pageSubtitle.Font = new Font("Segoe UI", 9F);
         pageSubtitle.ForeColor = Muted;
         pageSubtitle.AutoSize = true;
@@ -231,7 +231,7 @@ internal sealed class MainForm : Form
             Margin = Padding.Empty
         };
 
-        ConfigureButton(runButton, "Iniciar análisis", Primary, Color.White, 145);
+        ConfigureButton(runButton, "Análisis completo", Primary, Color.White, 155);
         runButton.Click += async (_, _) => await StartDiagnosticAsync();
 
         ConfigureButton(cancelButton, "Cancelar", SurfaceRaised, TextMain, 100);
@@ -304,10 +304,10 @@ internal sealed class MainForm : Form
     {
         pages["Inicio"] = BuildDashboard();
         pages["Hardware"] = BuildReportPage("Hardware y almacenamiento", "Inventario, componentes, capacidad y estado de las unidades.");
-        pages["Seguridad"] = BuildReportPage("Seguridad", "Defender, firewall, TPM, Secure Boot, BitLocker y protecciones.");
+        pages["Seguridad"] = BuildReportPage("Seguridad", "Defender, exclusiones antivirus, firewall, TPM, Secure Boot, BitLocker y protecciones.");
         pages["Red"] = BuildReportPage("Red y conectividad", "Adaptadores, Wi-Fi, DNS, puerta de enlace y conectividad HTTPS.");
-        pages["Windows"] = BuildReportPage("Windows y estabilidad", "Integridad del sistema, servicios, actualizaciones y eventos.");
-        pages["Rendimiento"] = BuildReportPage("Rendimiento", "Uso de recursos, procesos y aplicaciones configuradas al inicio.");
+        pages["Windows"] = BuildReportPage("Windows y estabilidad", "Integridad, historial de fallos de 30 días, energía, servicios y actualizaciones.");
+        pages["Rendimiento"] = BuildReportPage("Rendimiento", "CPU medida, memoria, firmas de inicio, tareas programadas y software instalado.");
         pages["Dispositivos"] = BuildReportPage("Dispositivos y controladores", "Estados de dispositivos y códigos informados por Windows.");
 
         foreach (var page in pages.Values)
@@ -344,7 +344,7 @@ internal sealed class MainForm : Form
 
         metricPanel.Dock = DockStyle.Fill;
         metricPanel.FlowDirection = FlowDirection.LeftToRight;
-        metricPanel.WrapContents = false;
+        metricPanel.WrapContents = true;
         metricPanel.BackColor = Background;
         metricPanel.Padding = new Padding(0, 3, 0, 3);
         metricPanel.Margin = Padding.Empty;
@@ -761,10 +761,10 @@ internal sealed class MainForm : Form
     {
         var card = new Panel
         {
-            Width = 188,
+            Width = 156,
             Height = 94,
             BackColor = Surface,
-            Margin = new Padding(0, 0, 12, 0),
+            Margin = new Padding(0, 0, 8, 0),
             Padding = new Padding(13, 8, 10, 7)
         };
         var heading = new Label
@@ -931,7 +931,7 @@ main{max-width:1080px;margin:30px auto;padding:0 22px}.hero{background:var(--nav
 .eyebrow{font-size:11px;letter-spacing:1.2px;color:#b9c9dc;font-weight:700}h1{font-size:28px;line-height:1.2;margin:8px 0}.meta{display:flex;gap:20px;flex-wrap:wrap;color:#c4d0df;font-size:12px;margin-top:16px}
 .verdict{margin:18px 0;padding:17px 20px;border-radius:10px;background:#fff;border:1px solid var(--line);border-left:5px solid var(--gray)}
 .verdict strong{display:block;font-size:16px;margin-bottom:3px}.verdict.ok{border-left-color:var(--green)}.verdict.warning{border-left-color:var(--amber)}.verdict.critical{border-left-color:var(--red)}.verdict.pending{border-left-color:var(--gray)}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0}.metric,.section{background:var(--paper);border:1px solid var(--line);border-radius:11px;padding:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}.metric,.section{background:var(--paper);border:1px solid var(--line);border-radius:11px;padding:16px}
 .metric span{display:block;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.5px}.metric b{display:block;font-size:27px;margin-top:3px}
 .ok{color:var(--green)}.warning{color:var(--amber)}.critical{color:var(--red)}.pending{color:var(--gray)}.info{color:var(--blue)}
 h2{font-size:18px;margin:0 0 12px}h3{font-size:14px;margin:0 0 5px}
@@ -1025,6 +1025,8 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:9px 0 0;padding:12px;bord
         content = Regex.Replace(content, @"(?i)C:\\Users\\[^\\\r\n]+", @"C:\Users\[USUARIO OCULTO]");
         content = Regex.Replace(content, @"(?im)^(Usuario|Usuario actual|User|Equipo|ComputerName|SerialNumber|UUID)\s*:\s*.*$", "$1: [OCULTO]");
         content = Regex.Replace(content, @"(?im)^\s*Usuario\s*:\s*.*$", "Usuario: [OCULTO]");
+        content = Regex.Replace(content, @"(?im)^\s*SSID\s*:\s*.*$", "SSID: [RED OCULTA]");
+        content = Regex.Replace(content, @"(?im)^\s*Nombre de perfil\s*:\s*.*$", "Nombre de perfil: [RED OCULTA]");
         return content;
     }
 
@@ -1033,7 +1035,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:9px 0 0;padding:12px;bord
         if (isAdmin || isRunning) return;
         var answer = MessageBox.Show(
             this,
-            "Se abrirá otra instancia con permisos de administrador. Esto permite ejecutar DISM, SFC, CHKDSK y consultas de seguridad adicionales.\r\n\r\nLa aplicación seguirá siendo de solo lectura: no reparará ni modificará el sistema.",
+            "Se abrirá otra instancia con permisos de administrador. Esto permite ejecutar DISM, SFC, la consulta de estado CHKDSK y comprobaciones de seguridad adicionales.\r\n\r\nLa aplicación seguirá siendo de solo lectura: no reparará ni modificará el sistema.",
             "Permisos de administrador",
             MessageBoxButtons.OKCancel,
             MessageBoxIcon.Information);
@@ -1120,5 +1122,5 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:9px 0 0;padding:12px;bord
     }
 
     private static string GetVersion() =>
-        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.1.0";
+        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "3.0.0";
 }

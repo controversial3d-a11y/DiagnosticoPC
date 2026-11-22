@@ -8,16 +8,20 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: diagnostico-pc-windows-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
-    name: Build and publish Windows x64
+    name: Build and publish DiagnosticoPC 3.0.0 (Windows x64)
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup .NET 10 LTS
+      - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
@@ -29,9 +33,9 @@ jobs:
         run: dotnet build DiagnosticoPC.csproj -c Release
 
       - name: Publish self-contained single-file executable
-        run: dotnet publish DiagnosticoPC.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=2.0.0 -p:AssemblyVersion=2.0.0.0 -p:FileVersion=2.0.0.0 -p:DebugType=None -p:DebugSymbols=false
+        run: dotnet publish DiagnosticoPC.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=3.0.0 -p:AssemblyVersion=3.0.0.0 -p:FileVersion=3.0.0.0 -p:InformationalVersion=3.0.0 -p:DebugType=None -p:DebugSymbols=false
 
-      - name: Verify executable
+      - name: Verify executable and calculate SHA256
         shell: pwsh
         run: |
           $exe = "bin/Release/net10.0-windows/win-x64/publish/DiagnosticoPC.exe"
@@ -40,11 +44,12 @@ jobs:
           Write-Host "Executable: $($file.FullName)"
           Write-Host "Size: $($file.Length) bytes"
           if ($file.Length -lt 50000000) { throw "El ejecutable parece incompleto." }
+          Get-FileHash $exe -Algorithm SHA256 | Format-List
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DiagnosticoPC-2.0-Windows-x64
+          name: DiagnosticoPC-3.0.0-Windows-x64
           path: bin/Release/net10.0-windows/win-x64/publish/DiagnosticoPC.exe
           if-no-files-found: error
           retention-days: 30
@@ -52,15 +57,17 @@ jobs:
       - name: Publish downloadable GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.0.${{ github.run_number }}
-          name: Diagnóstico PC 2.0.${{ github.run_number }}
+          tag_name: v3.0.0
+          name: Diagnóstico PC 3.0.0
           body: |
-            Diagnóstico PC 2.0
-            - Aplicación portable para Windows 11 x64.
-            - Motor de pruebas por secciones y resultados clasificados.
-            - Diagnóstico de hardware, almacenamiento, seguridad, red, Windows, rendimiento y dispositivos.
-            - Exportación de informes HTML imprimibles y TXT.
-            - Ejecución de solo lectura. Las pruebas profundas requieren elevación voluntaria.
-            - No instala, repara, elimina archivos ni modifica configuraciones.
+            Diagnóstico PC 3.0.0 — versión avanzada para Windows 11 x64.
+            - Más de 20 comprobaciones locales de hardware, almacenamiento, Windows, seguridad, red y rendimiento.
+            - Auditoría de firma digital y SHA-256 local para ejecutables de inicio.
+            - Revisión de tareas programadas, exclusiones de Defender y patrones de fallos de 30 días.
+            - Muestra breve de CPU por proceso, inventario de software y diagnóstico de energía.
+            - Exportación HTML/TXT manual con anonimizado activado por defecto.
+            - Sin telemetría, carga de informes ni análisis de archivos en la nube.
+            - Diagnóstico de solo lectura; no instala, elimina, repara ni modifica configuraciones.
+            - DISM/SFC/CHKDSK solo se ejecutan con elevación voluntaria cuando corresponde.
           files: bin/Release/net10.0-windows/win-x64/publish/DiagnosticoPC.exe
           make_latest: true

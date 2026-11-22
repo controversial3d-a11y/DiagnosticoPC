@@ -50,7 +50,7 @@ public sealed class DiagnosticEngine
     private readonly string powershellPath = Path.Combine(
         Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
 
-    private static readonly DiagnosticCheck[] Checks =
+    private static readonly DiagnosticCheck[] CoreChecks =
     {
         new("system", "Hardware", "Sistema, BIOS, placa madre y procesador", """
 $ErrorActionPreference = 'Continue'
@@ -411,13 +411,15 @@ $ErrorActionPreference = 'Continue'
 "SFC_EXIT_CODE=$LASTEXITCODE"
 """, TimeSpan.FromMinutes(20), true),
 
-        new("chkdsk", "Almacenamiento", "Verificación en línea del sistema de archivos (CHKDSK)", """
+        new("chkdsk", "Almacenamiento", "Consulta del estado del volumen (CHKDSK, solo lectura)", """
 $ErrorActionPreference = 'Continue'
-'CHKDSK /scan solicita una exploración en línea de NTFS. No se utilizan /f ni /r.'
-& chkdsk.exe $env:SystemDrive /scan 2>&1 | Out-String -Width 200
+'CHKDSK se ejecuta sin parámetros de reparación: consulta el estado del volumen y no corrige errores.'
+& chkdsk.exe $env:SystemDrive 2>&1 | Out-String -Width 200
 "CHKDSK_EXIT_CODE=$LASTEXITCODE"
-""", TimeSpan.FromMinutes(15), true)
+""", TimeSpan.FromMinutes(3), true)
     };
+
+    private static readonly DiagnosticCheck[] Checks = CoreChecks.Concat(AdvancedDiagnosticChecks.All).ToArray();
 
     public static bool IsAdministrator()
     {
@@ -612,10 +614,7 @@ $ErrorActionPreference = 'Continue'
 
         if (id == "chkdsk")
         {
-            if (ContainsAny(output, "Windows ha examinado el sistema de archivos y no encontró problemas", "Windows examinó el sistema de archivos y no encontró problemas", "Windows has scanned the file system and found no problems"))
-                return FindingLevel.Ok;
-            if (ContainsAny(output, "found problems", "se encontraron problemas"))
-                return FindingLevel.Warning;
+            if (command.ExitCode == 0) return FindingLevel.Ok;
             return FindingLevel.NotVerified;
         }
 

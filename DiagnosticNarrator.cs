@@ -227,7 +227,7 @@ public static class DiagnosticNarrator
 
             case "chkdsk":
                 headline = "Sistema de archivos de la unidad del sistema";
-                explanation = "CHKDSK /scan solicita una exploración en línea de NTFS. No se utilizan opciones de reparación.";
+                explanation = "CHKDSK se ejecuta sin parámetros de reparación y consulta el estado del volumen. Esta prueba no equivale a una exploración profunda ni corrige errores.";
                 if (text.Contains("No se ejecutó porque esta sesión", StringComparison.OrdinalIgnoreCase))
                     facts.Add("La comprobación no se ejecutó porque requiere permisos de administrador.");
                 else if (Contains(text, "no encontró problemas", "found no problems"))
@@ -236,6 +236,72 @@ public static class DiagnosticNarrator
                     facts.Add("La exploración informó problemas que requieren revisión.");
                 else facts.Add("No se obtuvo una conclusión reconocible. Consultá la evidencia técnica.");
                 recommendation = "Si se detectan problemas, guardá una copia de seguridad y evaluá los pasos de mantenimiento por separado. Esta aplicación no corrige errores.";
+                break;
+
+            case "performance-sample":
+                headline = "Medición breve de actividad y consumo por proceso";
+                explanation = "Se midió CPU durante tres segundos y se tomó una muestra de memoria. No sustituye una monitorización prolongada.";
+                Add(text, facts, "CPU total", "CPU total informada durante la muestra");
+                Add(text, facts, "RAM utilizada", "RAM utilizada durante la muestra");
+                Add(text, facts, "RAM disponible", "RAM disponible");
+                AddMarkedLines(text, facts);
+                recommendation = "Compará la muestra con el uso habitual. Para detectar picos intermitentes conviene repetir el análisis mientras ocurre la lentitud.";
+                break;
+
+            case "driver-audit":
+                headline = "Revisión de firma digital de controladores";
+                explanation = "Se consultó el indicador de firma digital de los controladores PnP. Un controlador sin firma debe revisarse, pero no es prueba automática de malware.";
+                Add(text, facts, "Controladores revisados", "Controladores PnP inventariados");
+                Add(text, facts, "Sin firma confirmada", "Controladores sin firma digital confirmada");
+                AddMarkedLines(text, facts);
+                recommendation = "Verificá el origen y fabricante antes de actualizar o quitar un controlador. No se tocó ninguno.";
+                break;
+
+            case "startup-audit":
+                headline = "Integridad básica de ejecutables de inicio";
+                explanation = "Se consultaron firmas Authenticode y huellas SHA-256 de los ejecutables de inicio. Los hashes se calculan localmente y no se envían.";
+                Add(text, facts, "Entradas analizadas", "Entradas de inicio analizadas");
+                AddMarkedLines(text, facts);
+                recommendation = "Revisá comandos codificados, rutas temporales o archivos inexistentes. Un ejecutable sin firma no equivale automáticamente a una amenaza.";
+                break;
+
+            case "scheduled-task-audit":
+                headline = "Persistencia mediante tareas programadas";
+                explanation = "Se revisaron tareas activas ajenas a la carpeta estándar de Windows y sus acciones. Los programas legítimos también crean tareas.";
+                Add(text, facts, "Tareas detectadas", "Tareas de terceros habilitadas o activas");
+                AddMarkedLines(text, facts);
+                recommendation = "Confirmá que reconocés tareas que ejecutan scripts, comandos codificados o aplicaciones desde carpetas temporales. No se deshabilitó ninguna.";
+                break;
+
+            case "defender-exclusions":
+                headline = "Exclusiones del antivirus";
+                explanation = "Se consultaron rutas, procesos, extensiones y direcciones IP excluidas de Defender. Una exclusión amplia puede reducir la cobertura.";
+                Add(text, facts, "Total de exclusiones", "Total de exclusiones explícitas consultadas");
+                AddMarkedLines(text, facts);
+                recommendation = "Mantené únicamente exclusiones necesarias e intencionales. No se modificó la configuración de Defender.";
+                break;
+
+            case "reliability":
+                headline = "Patrones de cierres y fallos durante 30 días";
+                explanation = "Se agruparon errores de aplicaciones, informes de Windows, apagados inesperados y eventos de almacenamiento/hardware. La recurrencia importa más que un evento aislado.";
+                Add(text, facts, "Fallos de aplicaciones", "Fallos de aplicaciones / Windows Error Reporting");
+                Add(text, facts, "Eventos del sistema", "Eventos de apagado inesperado / hardware / almacenamiento");
+                AddMarkedLines(text, facts);
+                recommendation = "Relacioná los eventos repetidos con la fecha y hora de los síntomas. Fallos WHEA o de disco repetidos merecen prioridad.";
+                break;
+
+            case "software-inventory":
+                headline = "Inventario local de software";
+                explanation = "Se listaron aplicaciones registradas por Windows. No se comparan versiones con catálogos de Internet ni se declara obsoleto un programa por su antigüedad.";
+                Add(text, facts, "Programas inventariados", "Programas inventariados");
+                recommendation = "Usá el inventario para identificar software que no reconocés o ya no necesitás. No se desinstaló ni actualizó nada.";
+                break;
+
+            case "power":
+                headline = "Estado de energía y reactivación";
+                explanation = "Se consultó el plan activo, las solicitudes que mantienen Windows despierto y el último motivo de reactivación.";
+                AddMarkedLines(text, facts);
+                recommendation = "Si el equipo no entra en suspensión o se despierta solo, revisá las solicitudes y el último motivo registrado antes de cambiar el plan.";
                 break;
 
             default:

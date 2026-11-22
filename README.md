@@ -1,49 +1,73 @@
-# Diagnóstico PC 2.0
+# Diagnóstico PC 3.0.0
 
-Aplicación de escritorio para Windows 11 x64. Ejecuta diagnósticos locales de hardware, almacenamiento, seguridad, conectividad, rendimiento y estabilidad de Windows.
+Aplicación de escritorio portable para Windows 11 x64, en español. Reúne más de 20 comprobaciones locales para revisar hardware, almacenamiento, Windows, seguridad, red, rendimiento, controladores y mecanismos habituales de inicio automático.
 
-## Características
+## Diagnósticos incluidos
 
-- Interfaz en español con secciones independientes, progreso, cancelación y resumen de hallazgos.
-- Inventario de Windows, equipo, BIOS/UEFI, placa madre, CPU, módulos RAM, GPU y monitores. Consulta zonas térmicas ACPI únicamente cuando el firmware las expone.
-- Procesos ordenados por memoria y tiempo de CPU acumulado, con aclaración de que este último no es consumo instantáneo.
-- Aplicaciones configuradas para iniciarse con Windows, agrupadas por tipo e identificando utilidades de acceso remoto para revisión: solo lectura, sin deshabilitarlas.
-- Volúmenes, espacio libre, discos físicos, estado que expone Storage y contadores de fiabilidad/SMART cuando están disponibles.
-- Dispositivos con códigos de error del Administrador de dispositivos, con explicación de códigos habituales.
-- Microsoft Defender: estado de protección, firmas, fechas de análisis y detecciones registradas que expone el producto.
+### Hardware y almacenamiento
+- Windows, compilación, BIOS/UEFI, placa madre, CPU, RAM, módulos de memoria y zonas térmicas ACPI cuando el firmware las expone.
+- GPU, controlador, pantallas y resolución.
+- Unidades lógicas, espacio libre, discos físicos, estado de salud y contadores SMART/fiabilidad cuando el dispositivo y el controlador los publican.
+- Dispositivos con códigos de error del Administrador de dispositivos.
+- Inventario PnP y estado de firma digital de controladores.
+
+### Rendimiento
+- Captura de CPU y RAM.
+- Muestra temporal de tres segundos para medir CPU total y consumo relativo por proceso, además de procesos con mayor uso de memoria.
+- Programas configurados para iniciar con Windows.
+- Verificación local de firma Authenticode y cálculo SHA-256 de ejecutables asociados a entradas de inicio (muestra limitada a 30 entradas).
+- Tareas programadas de terceros activas, con revisión de comandos codificados y rutas temporales.
+- Inventario de programas instalados desde el registro de Windows.
+
+### Seguridad
+- Microsoft Defender: estado de protecciones, firmas, fechas de análisis e historial de detecciones.
+- Exclusiones configuradas en Defender, con atención a rutas excesivamente amplias.
 - Firewall de Windows, TPM, Secure Boot, BitLocker (sin consultar claves de recuperación), UAC, SmartScreen y VBS cuando Windows permite consultarlos.
-- Ethernet, Wi-Fi, configuración IP, DNS, proxy, conectividad ICMP/HTTPS y puertos locales en escucha asociados a procesos cuando Windows permite consultarlos.
-- Servicios relevantes, registros de eventos System/Application de los últimos siete días, actualizaciones instaladas y reinicio pendiente.
-- DISM ScanHealth, SFC VerifyOnly y CHKDSK /scan, disponibles únicamente al ejecutar voluntariamente como administrador.
-- Exportación HTML imprimible y TXT. El HTML puede imprimirse o guardarse como PDF desde el navegador. El anonimizado de datos está activado por defecto al exportar.
+- Puertos TCP locales en escucha asociados a procesos; la escucha local no demuestra exposición a Internet.
 
-## Seguridad y privacidad
+### Red
+- Ethernet, Wi-Fi, dirección IP, puerta de enlace, DNS, proxy y servicio WLAN.
+- Resolución DNS, ping de referencia y conexión TCP 443 de prueba a microsoft.com.
+- La prueba ICMP se interpreta con cautela porque algunos routers y proveedores bloquean ping.
 
-La aplicación está diseñada para consultar el estado del equipo. No incluye funciones para limpiar, reparar, optimizar automáticamente, instalar/desinstalar, borrar, mover o modificar archivos personales; tampoco cambia registro, servicios, DNS, Wi-Fi, Firewall, controladores o políticas de Windows.
+### Windows y estabilidad
+- Servicios relevantes, actualizaciones instaladas y reinicio pendiente.
+- Eventos System/Application de los últimos siete días.
+- Patrones de cierres de aplicaciones, reinicios inesperados y eventos de almacenamiento/hardware durante los últimos 30 días.
+- Plan de energía, solicitudes que impiden la suspensión y último motivo de reactivación.
+- DISM ScanHealth y SFC VerifyOnly, disponibles al aceptar voluntariamente la elevación.
+- CHKDSK sin parámetros: consulta de estado del volumen, sin opciones de reparación.
 
-No inicia análisis antivirus ni pone archivos en cuarentena. Consulta el estado y el historial que Microsoft Defender expone. No obtiene contraseñas Wi-Fi, claves de BitLocker ni claves privadas. No transmite informes ni recopila telemetría. Solo realiza pruebas de conectividad a los destinos indicados en la sección Red. Los informes solo se guardan cuando el usuario elige explícitamente una ruta de exportación.
+## Solo lectura, privacidad y límites
 
-El botón de administrador solicita elevación de forma explícita mediante UAC. No eleva privilegios automáticamente. Si se ejecuta sin privilegios, las pruebas que requieren administrador se marcan como **No verificadas**, no como fallas.
+La aplicación está diseñada para diagnosticar y explicar. No limpia, optimiza ni repara automáticamente; no instala ni desinstala programas; no borra, mueve ni modifica archivos personales; no cambia registro, servicios, controladores, DNS, Wi-Fi, firewall, políticas, tareas programadas ni planes de energía.
+
+El botón de administrador solicita elevación solo cuando el usuario lo pulsa. Sin permisos, las pruebas que los requieren se marcan como **No verificadas**.
+
+No consulta contraseñas Wi-Fi, claves de BitLocker ni claves privadas. No sube informes, archivos ni hashes a servicios externos. Los hashes SHA-256 se calculan localmente. No incluye telemetría, cuenta, licencia ni actualización automática.
+
+Las únicas pruebas que generan tráfico de red son las consultas de conectividad explícitamente descritas (DNS, ICMP a 1.1.1.1 y TCP 443 a microsoft.com). No se transmite un informe ni se analizan archivos en la nube.
+
+La exportación HTML/TXT es manual, mediante una ruta elegida por el usuario. El anonimizado está activado por defecto y oculta direcciones IP, MAC, SID, usuario, identificadores de equipo y SSID en el informe.
 
 ## Interpretación y limitaciones
 
-- **Correcto** significa que esa prueba concreta devolvió evidencia compatible con un resultado correcto; no es una certificación global del equipo.
-- **Advertencia** o **Crítico** se asignan según señales identificadas por la consulta, no mediante una puntuación arbitraria.
-- **No verificado** indica falta de permisos, timeout, soporte del controlador o datos del firmware.
-- La lectura de temperaturas, desgaste y SMART depende de que el firmware, dispositivo y controlador expongan esos valores. La ausencia de un contador no demuestra que un disco esté sano ni averiado.
-- Los eventos aislados de DCOM no se consideran automáticamente errores críticos. Los eventos se agrupan para reducir duplicados.
-- Un ping sin respuesta puede deberse a filtrado ICMP; se contrasta con DNS y conectividad HTTPS.
-- El estado de Defender no garantiza ausencia total de malware y no sustituye un examen completo o sin conexión.
-- DISM ScanHealth, SFC VerifyOnly y CHKDSK /scan son comprobaciones; la aplicación no ejecuta comandos de reparación.
+- **Correcto:** la consulta concreta devolvió evidencia compatible con un resultado correcto.
+- **Observación / Crítico:** se identificó una señal que conviene revisar. No equivale a un diagnóstico infalible.
+- **Informativo:** dato para contexto o revisión manual; no es una detección de amenaza.
+- **No verificado:** faltan permisos, soporte del controlador, datos del firmware o una respuesta concluyente.
+- Una aplicación sin firma o una tarea programada desconocida no se clasifica automáticamente como malware. Se muestra para que el usuario confirme si la reconoce.
+- El estado de Defender y su historial no garantizan ausencia total de malware. La aplicación no inicia un examen antivirus completo ni pone archivos en cuarentena.
+- Las temperaturas, desgaste y SMART dependen de los sensores y controladores que el equipo exponga. La ausencia de esos datos no confirma ni descarta una falla física.
+- La muestra de CPU dura tres segundos; no detecta necesariamente picos esporádicos.
+- DISM ScanHealth y SFC VerifyOnly verifican, no reparan. CHKDSK sin parámetros muestra el estado del volumen; no realiza una reparación ni equivale a una comprobación offline exhaustiva.
 
 ## Ejecución
 
-Descargar DiagnosticoPC.exe desde la sección Releases y ejecutarlo. Es portable y no requiere instalación. Para completar DISM, SFC, CHKDSK y algunas consultas de seguridad, usar **Ejecutar como administrador** y aceptar el aviso de Windows.
+Descargá \`DiagnosticoPC.exe\` desde **Releases**. Es un ejecutable autocontenido para Windows x64 y no requiere instalación. Para DISM, SFC, CHKDSK y algunas consultas de seguridad, pulsá **Ejecutar como administrador** y aceptá UAC.
 
 ## Compilación
 
-El workflow de GitHub Actions compila con .NET 10 LTS y publica un ejecutable autocontenido para win-x64:
-
+\`\`\`powershell
 dotnet publish DiagnosticoPC.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
-
-El ejecutable se genera en bin/Release/net10.0-windows/win-x64/publish/DiagnosticoPC.exe.
+\`\`\`
