@@ -95,6 +95,8 @@ Descargá `DiagnosticoPC.exe` desde **Releases**. Es un ejecutable autocontenido
 
 ## Compilación
 
+La publicación oficial se valida mediante GitHub Actions en un entorno Windows x64 antes de generar el ejecutable portable.
+
 ```powershell
 dotnet publish DiagnosticoPC.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
 ```
