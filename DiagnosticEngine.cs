@@ -203,6 +203,7 @@ try {
   "Antigüedad del análisis rápido (días): $($s.QuickScanAge)"
   "Antigüedad del análisis completo (días): $($s.FullScanAge)"
   if (-not $s.AMServiceEnabled -or -not $s.AntivirusEnabled -or -not $s.RealTimeProtectionEnabled) { '[CRITICO] Una o más protecciones principales de Defender están desactivadas.' }
+  if ($s.IsTamperProtected -eq $false) { '[AVISO] La protección contra alteraciones de Defender aparece desactivada.' }
   if ($s.AntivirusSignatureLastUpdated -and ((Get-Date) - $s.AntivirusSignatureLastUpdated).TotalDays -gt 7) { '[AVISO] Las firmas de Defender tienen más de 7 días.' }
   if ($s.FullScanAge -ge 30) { '[AVISO] No se registra un análisis completo de Defender en los últimos 30 días.' }
 } catch { "[NO VERIFICADO] No se pudo consultar Defender: $($_.Exception.Message)" }
@@ -618,6 +619,7 @@ $ErrorActionPreference = 'Continue'
             return command.ExitCode == 0 ? FindingLevel.Info : FindingLevel.NotVerified;
         }
 
+        if (output.Contains("[OK]", StringComparison.OrdinalIgnoreCase)) return FindingLevel.Ok;
         if (id == "firewall" && output.Contains("[OK]")) return FindingLevel.Ok;
         if (id == "devices" && output.Contains("[OK]")) return FindingLevel.Ok;
         if (id == "storage" && output.Contains("Healthy", StringComparison.OrdinalIgnoreCase)) return FindingLevel.Ok;
