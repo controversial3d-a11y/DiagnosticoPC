@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Sockets;
+using System.Globalization;
 using System.Reflection;
 using System.Security.Principal;
 using System.Text;
@@ -1019,8 +1021,27 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:9px 0 0;padding:12px;bord
     private static string Anonymize(string content)
     {
         content = Regex.Replace(content, @"\b(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}\b", "[MAC OCULTA]");
-        content = Regex.Replace(content, @"\b(?:\d{1,3}\.){3}\d{1,3}\b", "[IP OCULTA]");
-        content = Regex.Replace(content, @"(?i)\b[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){2,7}\b", "[IPv6 OCULTA]");
+        content = Regex.Replace(content,
+            @"(?<![\d.])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![\d.])",
+            match =>
+            {
+                int lineStart = content.LastIndexOf('\n', Math.Max(0, match.Index - 1));
+                string prefix = content.Substring(lineStart < 0 ? 0 : lineStart + 1, match.Index - (lineStart < 0 ? 0 : lineStart + 1));
+                if (Regex.IsMatch(prefix, @"(?i)\b(version|versión|driver|controlador|compilación|build|firmware|release)\b[^\r\n]*$"))
+                    return match.Value;
+                return "[IP OCULTA]";
+            });
+        content = Regex.Replace(content,
+            @"(?<![0-9A-Fa-f])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?![0-9A-Fa-f])",
+            match =>
+            {
+                string candidate = match.Value;
+                if (TimeSpan.TryParseExact(candidate, new[] { @"h\:mm\:ss", @"hh\:mm\:ss", @"m\:ss" }, CultureInfo.InvariantCulture, out _))
+                    return candidate;
+                return IPAddress.TryParse(candidate, out var address) && address.AddressFamily == AddressFamily.InterNetworkV6
+                    ? "[IPv6 OCULTA]"
+                    : candidate;
+            });
         content = Regex.Replace(content, @"(?i)\bS-1-5-21-(?:\d+-){3}\d+\b", "[SID OCULTO]");
         content = Regex.Replace(content, @"(?i)C:\\Users\\[^\\\r\n]+", @"C:\Users\[USUARIO OCULTO]");
         content = Regex.Replace(content, @"(?im)^(Usuario|Usuario actual|User|Equipo|ComputerName|SerialNumber|UUID)\s*:\s*.*$", "$1: [OCULTO]");

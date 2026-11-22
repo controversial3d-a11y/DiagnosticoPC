@@ -47,13 +47,21 @@ try {
   $all = @(Get-CimInstance Win32_PnPSignedDriver -ErrorAction Stop)
   if ($all.Count -eq 0) { '[NO VERIFICADO] Windows no devolvió inventario de controladores PnP.' }
   else {
-    $unsigned = @($all | Where-Object { $_.IsSigned -ne $true })
+    $unsigned = @($all | Where-Object { $_.IsSigned -eq $false })
+    $unknown = @($all | Where-Object { $null -eq $_.IsSigned })
     "Controladores PnP inventariados: $($all.Count)"
     "Controladores sin firma digital confirmada: $($unsigned.Count)"
-    if ($unsigned.Count -eq 0) { '[OK] Todos los controladores PnP consultados figuran firmados.' }
+    "Registros cuya firma no pudo determinarse: $($unknown.Count)"
+    if ($unsigned.Count -eq 0 -and $unknown.Count -eq 0) { '[OK] Todos los controladores PnP consultados figuran firmados.' }
     else {
-      '[INFO] Los controladores sin firma deben revisarse por fabricante y contexto; no implican automáticamente malware.'
-      $unsigned | Select-Object -First 40 DeviceName,DeviceID,DriverProviderName,DriverVersion,IsSigned,InfName | Format-List | Out-String -Width 220
+      if ($unsigned.Count -gt 0) {
+        '[INFO] Los controladores que Windows marca explícitamente como no firmados deben revisarse por fabricante y contexto; no implican automáticamente malware.'
+        $unsigned | Select-Object -First 40 DeviceName,DeviceID,DriverProviderName,DriverVersion,IsSigned,InfName | Format-List | Out-String -Width 220
+      }
+      if ($unknown.Count -gt 0) {
+        '[INFO] Hay registros sin un valor de firma devuelto por Windows. No se cuentan como controladores sin firma.'
+        $unknown | Select-Object -First 15 DeviceName,DeviceID,DriverProviderName,DriverVersion,IsSigned,InfName | Format-List | Out-String -Width 220
+      }
     }
   }
 } catch { "[NO VERIFICADO] No se pudo auditar la firma de los controladores: $($_.Exception.Message)" }
@@ -154,33 +162,61 @@ try {
         new("reliability", "Windows", "Historial de fallos de aplicaciones, hardware y almacenamiento (30 días)", """
 $ErrorActionPreference = 'Continue'
 $since = (Get-Date).AddDays(-30)
+function Test-ImportantDiagnosticEvent($e) {
+  $provider = [string]$e.ProviderName
+  $id = [int]$e.Id
+  $message = [string]$e.Message
+  if ($provider -match 'ESENT' -and $id -eq 474 -and $message -match '(?i)checksum|suma de comprobaci') { return $true }
+  if ($provider -match 'Ntfs' -and $id -in 55,98,140) { return $true }
+  if ($provider -match 'WHEA|Disk|storahci|stornvme|storport' -and $id -in 7,11,15,51,129,153,157) { return $true }
+  if ($provider -match 'Kernel-Power' -and $id -eq 41) { return $true }
+  if ($provider -match 'EventLog' -and $id -eq 6008) { return $true }
+  if ($provider -match 'BugCheck|WER-SystemErrorReporting' -and $id -eq 1001) { return $true }
+  return $false
+}
 try {
-  $app = @(Get-WinEvent -FilterHashtable @{LogName='Application';Id=1000,1001,1002;StartTime=$since} -MaxEvents 300 -ErrorAction SilentlyContinue)
-  $sys = @(Get-WinEvent -FilterHashtable @{LogName='System';Id=7,41,51,55,1001,129,153,6008;StartTime=$since} -MaxEvents 300 -ErrorAction SilentlyContinue)
-  "Fallos de aplicaciones / Windows Error Reporting: $($app.Count)"
-  "Eventos de apagado inesperado / hardware / almacenamiento: $($sys.Count)"
-  if (($app.Count + $sys.Count) -eq 0) { '[OK] No se encontraron eventos de estas categorías en los últimos 30 días.' }
-  else {
+  $app = @(Get-WinEvent -FilterHashtable @{LogName='Application';Id=474,1000,1001,1002;StartTime=$since} -MaxEvents 500 -ErrorAction SilentlyContinue)
+  $sys = @(Get-WinEvent -FilterHashtable @{LogName='System';Id=7,41,51,55,98,1001,129,140,153,6008} -MaxEvents 500 -ErrorAction SilentlyContinue |
+    Where-Object { $_.ProviderName -notmatch 'Kernel-Processor-Power|Kernel-Boot|Hyper-V-Hypervisor' })
+  $importantApp = @($app | Where-Object {
+    (Test-ImportantDiagnosticEvent $_) -or
+    ($_.ProviderName -match 'Application Error|Application Hang' -and $_.Id -in 1000,1002)
+  })
+  $importantSystem = @($sys | Where-Object { Test-ImportantDiagnosticEvent $_ })
+  "Eventos de aplicaciones consultados: $($app.Count)"
+  "Eventos del sistema consultados: $($sys.Count)"
+  "Eventos de sistema/almacenamiento/hardware que requieren contexto: $($importantSystem.Count)"
+  if (($app.Count + $sys.Count) -eq 0) {
+    '[OK] No se encontraron eventos de estas categorías en los últimos 30 días.'
+  } else {
     '=== EVENTOS DE APLICACIONES ==='
-    foreach ($g in ($app | Group-Object ProviderName,Id | Sort-Object Count -Descending | Select-Object -First 18)) {
+    foreach ($g in ($app | Group-Object ProviderName,Id | Sort-Object Count -Descending | Select-Object -First 20)) {
       $e = $g.Group | Sort-Object TimeCreated -Descending | Select-Object -First 1
       $msg = ($e.Message -replace '\s+',' ').Trim()
-      if ($msg.Length -gt 220) { $msg = $msg.Substring(0,220) + '…' }
-      $tag = if ($g.Count -ge 10) { 'AVISO' } else { 'INFO' }
+      if ($msg.Length -gt 260) { $msg = $msg.Substring(0,260) + '…' }
+      $repeatedCrash = ($e.ProviderName -match 'Application Error|Application Hang' -and $g.Count -ge 3)
+      $tag = if (Test-ImportantDiagnosticEvent $e) { 'AVISO' } elseif ($repeatedCrash) { 'AVISO' } else { 'INFO' }
       "[$tag] $($e.ProviderName) | Evento $($e.Id) | Repeticiones: $($g.Count) | Último: $($e.TimeCreated) | $msg"
     }
     '=== EVENTOS DEL SISTEMA ==='
-    foreach ($g in ($sys | Group-Object ProviderName,Id | Sort-Object Count -Descending | Select-Object -First 18)) {
+    foreach ($g in ($sys | Group-Object ProviderName,Id | Sort-Object Count -Descending | Select-Object -First 25)) {
       $e = $g.Group | Sort-Object TimeCreated -Descending | Select-Object -First 1
       $msg = ($e.Message -replace '\s+',' ').Trim()
-      if ($msg.Length -gt 220) { $msg = $msg.Substring(0,220) + '…' }
-      $tag = if ($e.Id -in 7,51,55,129,153 -or $g.Count -ge 10) { 'AVISO' } else { 'INFO' }
+      if ($msg.Length -gt 260) { $msg = $msg.Substring(0,260) + '…' }
+      $tag = if (Test-ImportantDiagnosticEvent $e) { 'AVISO' } else { 'INFO' }
       "[$tag] $($e.ProviderName) | Evento $($e.Id) | Repeticiones: $($g.Count) | Último: $($e.TimeCreated) | $msg"
     }
-    if ($app.Count -ge 20 -or $sys.Count -ge 20) { '[AVISO] Hay un volumen elevado de eventos; importan la repetición y el contexto.' }
+    if ($importantSystem.Count -gt 0) {
+      '[AVISO] Se identificaron eventos específicos de almacenamiento, sistema de archivos, hardware o apagado inesperado.'
+    } else {
+      '[INFO] No se detectaron patrones de error de almacenamiento o hardware entre los eventos filtrados.'
+    }
+    if ($app.Count -ge 500 -or $sys.Count -ge 500) {
+      '[INFO] La consulta alcanzó el límite de muestra de 500 eventos; las cantidades no representan necesariamente el total del período.'
+    }
   }
 } catch { "[NO VERIFICADO] No se pudo consultar el historial de confiabilidad: $($_.Exception.Message)" }
-'Los eventos antiguos no prueban que la falla siga activa. Se muestran patrones y repeticiones para orientar la revisión.'
+'Los eventos informativos de inicialización de VBS, Hyper-V y administración de energía del procesador no se clasifican como fallos.'
 """, TimeSpan.FromSeconds(180)),
 
         new("software-inventory", "Rendimiento", "Inventario de programas instalados", """

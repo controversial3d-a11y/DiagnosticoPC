@@ -1,4 +1,4 @@
-# Diagnóstico PC 3.0.0
+# Diagnóstico PC 3.0.1
 
 Aplicación de escritorio portable para Windows 11 x64, en español. Reúne más de 20 comprobaciones locales para revisar hardware, almacenamiento, Windows, seguridad, red, rendimiento, controladores y mecanismos habituales de inicio automático.
 

@@ -131,6 +131,12 @@ public static class DiagnosticNarrator
                 Add(text, facts, "TPM habilitado", "TpmEnabled");
                 Add(text, facts, "UAC", "UAC EnableLUA");
                 Add(text, facts, "SmartScreen", "SmartScreen");
+                Add(text, facts, "VBS", "VirtualizationBasedSecurityStatus");
+                Add(text, facts, "Servicios de seguridad activos", "SecurityServicesRunning");
+                foreach (Match m in Regex.Matches(text, @"(?im)^\s*([A-Z]:)\s+(OperatingSystem|Data)\s+(FullyDecrypted|FullyEncrypted|EncryptionInProgress)\s+(On|Off)\s+([\d.]+)\s+([A-Za-z0-9]+)"))
+                    facts.Add($"{m.Groups[1].Value}: cifrado {m.Groups[3].Value}; protección {m.Groups[4].Value}; método {m.Groups[6].Value}.");
+                if (!Regex.IsMatch(text, @"(?im)^\s*SmartScreen[^:]*:\s*[^\r\n]+"))
+                    facts.Add("SmartScreen: el estado no pudo determinarse con la fuente consultada; no se considera desactivado.");
                 if (text.Contains("[NO VERIFICADO]", StringComparison.OrdinalIgnoreCase))
                     facts.Add("Una o más comprobaciones no pudieron consultarse. Esto no significa que la protección esté desactivada.");
                 recommendation = "Revisá las funciones marcadas como desactivadas o no verificadas. No se modificó firmware, cifrado ni políticas de seguridad.";
@@ -202,8 +208,8 @@ public static class DiagnosticNarrator
                     facts.Add("La comprobación no se ejecutó porque requiere permisos de administrador.");
                 else if (Contains(text, "no se detectó daño", "no component store corruption detected"))
                     facts.Add("DISM no informó daños en el almacén de componentes.");
-                else if (Contains(text, "se puede reparar", "component store is repairable"))
-                    facts.Add("DISM encontró daños que pueden requerir reparación.");
+                else if (Contains(text, "componentes puede repararse", "se puede reparar", "component store is repairable"))
+                    facts.Add("DISM encontró daños en el almacén de componentes que pueden repararse. La prueba no hizo ninguna reparación.");
                 else if (Contains(text, "no se puede reparar", "component store cannot be repaired"))
                     facts.Add("DISM informó daños que no puede reparar automáticamente.");
                 else facts.Add("El resultado no contiene una conclusión reconocible. Consultá la evidencia técnica.");
@@ -217,8 +223,8 @@ public static class DiagnosticNarrator
                     facts.Add("La comprobación no se ejecutó porque requiere permisos de administrador.");
                 else if (Contains(text, "no se encontraron infracciones", "did not find any integrity violations"))
                     facts.Add("Windows no informó infracciones de integridad.");
-                else if (Contains(text, "encontró archivos dañados", "found integrity violations"))
-                    facts.Add("Windows informó archivos protegidos con problemas de integridad.");
+                else if (Contains(text, "infracciones de integridad", "found integrity violations", "found corrupt files", "encontró archivos dañados"))
+                    facts.Add("SFC detectó infracciones de integridad en archivos protegidos de Windows. VerifyOnly no los repara.");
                 else if (text.Contains("La consulta terminó sin texto", StringComparison.OrdinalIgnoreCase))
                     facts.Add("SFC no devolvió un resultado legible. La comprobación no puede considerarse aprobada.");
                 else facts.Add("No se obtuvo una conclusión reconocible del verificador.");
@@ -227,15 +233,24 @@ public static class DiagnosticNarrator
 
             case "chkdsk":
                 headline = "Sistema de archivos de la unidad del sistema";
-                explanation = "CHKDSK se ejecuta sin parámetros de reparación y consulta el estado del volumen. Esta prueba no equivale a una exploración profunda ni corrige errores.";
+                explanation = "CHKDSK se ejecutó en modo de solo lectura. Consultó la estructura y los metadatos del sistema de archivos, pero no aplicó una reparación.";
                 if (text.Contains("No se ejecutó porque esta sesión", StringComparison.OrdinalIgnoreCase))
                     facts.Add("La comprobación no se ejecutó porque requiere permisos de administrador.");
-                else if (Contains(text, "no encontró problemas", "found no problems"))
-                    facts.Add("La exploración no informó problemas en el sistema de archivos.");
-                else if (Contains(text, "found problems", "se encontraron problemas"))
-                    facts.Add("La exploración informó problemas que requieren revisión.");
+                else if (Contains(text, "no encontró problemas", "no encontro problemas", "found no problems"))
+                    facts.Add("CHKDSK no informó inconsistencias en el sistema de archivos.");
+                else if (Contains(text, "detectó problemas", "detecto problemas", "found problems", "bitmap del volumen es incorrecto", "atributo bitmap de la tabla maestra de archivos"))
+                {
+                    facts.Add("CHKDSK detectó inconsistencias en los metadatos NTFS. El resultado no debe considerarse correcto.");
+                    if (Contains(text, "atributo bitmap", "bitmap de la tabla maestra de archivos", "mft"))
+                        facts.Add("Se informó una inconsistencia en el bitmap de la tabla maestra de archivos (MFT).");
+                    if (Contains(text, "bitmap del volumen es incorrecto", "volume bitmap is incorrect"))
+                        facts.Add("Se informó que el bitmap del volumen es incorrecto.");
+                    if (Contains(text, "archivos no indizados recuperados", "recovered in lost files", "found."))
+                        facts.Add("La salida menciona archivos huérfanos asociados a la carpeta de recuperación found.*. No la borres; comprobá si existe y conservá cualquier archivo que necesites.");
+                    facts.Add("Código de salida nativo de CHKDSK: " + (Regex.Match(text, @"(?im)^CHKDSK_EXIT_CODE=(-?\d+)").Groups[1].Value is string code && code.Length > 0 ? code : "no informado") + ".");
+                }
                 else facts.Add("No se obtuvo una conclusión reconocible. Consultá la evidencia técnica.");
-                recommendation = "Si se detectan problemas, guardá una copia de seguridad y evaluá los pasos de mantenimiento por separado. Esta aplicación no corrige errores.";
+                recommendation = "Antes de reparar, respaldá los archivos importantes. Después se puede evaluar una comprobación y reparación offline de NTFS por separado. Esta aplicación no ejecuta CHKDSK /F ni modifica el volumen.";
                 break;
 
             case "performance-sample":
@@ -339,8 +354,11 @@ public static class DiagnosticNarrator
 
     private static string? GetValue(string text, string key)
     {
-        var match = Regex.Match(text, @"(?im)^\s*" + Regex.Escape(key) + @"\s*:\s*(.*?)\s*$");
-        return match.Success ? match.Groups[1].Value : null;
+        var match = Regex.Match(text, @"(?im)^[ \t]*" + Regex.Escape(key) + @"[ \t]*:[ \t]*([^\r\n]*)");
+        if (!match.Success) return null;
+        string value = match.Groups[1].Value.Trim();
+        if (value.Length == 0 || value.StartsWith("===", StringComparison.Ordinal)) return null;
+        return value;
     }
 
     private static void AddMarkedLines(string text, List<string> facts)

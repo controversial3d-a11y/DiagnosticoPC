@@ -133,7 +133,7 @@ foreach ($v in $vols) {
   $freeGB = [math]::Round($v.FreeSpace / 1GB, 1)
   "$($v.DeviceID) | $($v.VolumeName) | $($v.FileSystem) | Total: $([math]::Round($v.Size / 1GB, 1)) GB | Libre: $freeGB GB ($freePct %)"
   if ($freePct -lt 5 -or $freeGB -lt 5) { "[CRITICO] $($v.DeviceID) tiene muy poco espacio disponible." }
-  elseif ($freePct -lt 15 -or $freeGB -lt 20) { "[AVISO] $($v.DeviceID) tiene poco espacio disponible." }
+  elseif ($freePct -lt 10 -or $freeGB -lt 20) { "[AVISO] $($v.DeviceID) tiene poco espacio disponible." }
 }
 '=== DISCOS FÍSICOS ==='
 try {
@@ -181,7 +181,10 @@ if ($bad.Count -eq 0) {
       default { 'Código de estado de dispositivo que requiere revisión.' }
     }
     $level = if ($code -eq 22) { 'INFO' } elseif ($code -eq 51) { 'INFO' } else { 'AVISO' }
-    "[$level] $($d.Name) | Código $code | $meaning | Fabricante: $($d.Manufacturer)"
+    $displayName = if (-not [string]::IsNullOrWhiteSpace([string]$d.Name)) { $d.Name } else { 'Nombre no informado por Windows' }
+    $manufacturer = if (-not [string]::IsNullOrWhiteSpace([string]$d.Manufacturer)) { $d.Manufacturer } else { 'No informado' }
+    $deviceId = if (-not [string]::IsNullOrWhiteSpace([string]$d.PNPDeviceID)) { $d.PNPDeviceID } else { [string]$d.DeviceID }
+    "[$level] $displayName | Código $code | $meaning | Fabricante: $manufacturer | ID: $deviceId"
   }
 }
 'Los códigos 22 y 51 no se interpretan automáticamente como fallas de hardware. No se modificó ni habilitó ningún dispositivo.'
@@ -251,11 +254,30 @@ try {
   "UAC EnableLUA: $($u.EnableLUA)"
   if ($u.EnableLUA -eq 0) { '[AVISO] UAC aparece desactivado.' }
 } catch { "Estado UAC no disponible: $($_.Exception.Message)" }
+$smartScreenKnown = $false
 try {
-  $ss = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer' -ErrorAction Stop
-  "SmartScreen: $($ss.SmartScreenEnabled)"
-  if ($ss.SmartScreenEnabled -eq 'Off') { '[AVISO] SmartScreen aparece desactivado.' }
-} catch { 'No se encontró el valor de configuración de SmartScreen en esa ubicación.' }
+  $policy = Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' -ErrorAction Stop
+  if ($null -ne $policy.EnableSmartScreen) {
+    $smartScreenKnown = $true
+    "SmartScreen EnableSmartScreen (política): $($policy.EnableSmartScreen)"
+    if ([int]$policy.EnableSmartScreen -eq 0) { '[AVISO] La política consultada indica SmartScreen desactivado.' }
+  }
+  if (-not [string]::IsNullOrWhiteSpace([string]$policy.ShellSmartScreenLevel)) {
+    $smartScreenKnown = $true
+    "SmartScreen ShellSmartScreenLevel: $($policy.ShellSmartScreenLevel)"
+  }
+} catch {}
+try {
+  $explorer = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer' -ErrorAction Stop
+  if (-not [string]::IsNullOrWhiteSpace([string]$explorer.SmartScreenEnabled)) {
+    $smartScreenKnown = $true
+    "SmartScreen SmartScreenEnabled: $($explorer.SmartScreenEnabled)"
+    if ([string]$explorer.SmartScreenEnabled -eq 'Off') { '[AVISO] SmartScreen aparece desactivado en el valor consultado.' }
+  }
+} catch {}
+if (-not $smartScreenKnown) {
+  'SmartScreen: Windows no expuso un valor legible en las ubicaciones consultadas; estado no determinado.'
+}
 '=== SEGURIDAD BASADA EN VIRTUALIZACIÓN ==='
 try {
   Get-CimInstance -Namespace root\Microsoft\Windows\DeviceGuard -ClassName Win32_DeviceGuard -ErrorAction Stop | Select-Object VirtualizationBasedSecurityStatus,SecurityServicesConfigured,SecurityServicesRunning | Format-List | Out-String -Width 180
@@ -358,21 +380,36 @@ foreach ($n in $names) {
 $ErrorActionPreference = 'Continue'
 $since = (Get-Date).AddDays(-7)
 '=== EVENTOS IMPORTANTES DEL SISTEMA Y APLICACIONES ==='
+function Test-ImportantDiagnosticEvent($e) {
+  $provider = [string]$e.ProviderName
+  $id = [int]$e.Id
+  $message = [string]$e.Message
+  if ($provider -match 'ESENT' -and $id -eq 474 -and $message -match '(?i)checksum|suma de comprobaci') { return $true }
+  if ($provider -match 'Ntfs' -and $id -in 55,98,140) { return $true }
+  if ($provider -match 'WHEA|Disk|storahci|stornvme|storport' -and $id -in 7,11,15,51,129,153,157) { return $true }
+  if ($provider -match 'Kernel-Power' -and $id -eq 41) { return $true }
+  if ($provider -match 'EventLog' -and $id -eq 6008) { return $true }
+  if ($provider -match 'BugCheck|WER-SystemErrorReporting' -and $id -eq 1001) { return $true }
+  return $false
+}
 try {
-  $events = @(Get-WinEvent -FilterHashtable @{LogName='System','Application'; Level=1,2; StartTime=$since} -MaxEvents 250 -ErrorAction SilentlyContinue)
-  "Eventos críticos/errores consultados: $($events.Count)"
-  if ($events.Count -eq 0) { '[OK] No se encontraron eventos críticos o errores en la muestra consultada.' }
+  $events = @(Get-WinEvent -FilterHashtable @{LogName='System','Application'; Level=1,2; StartTime=$since} -MaxEvents 500 -ErrorAction SilentlyContinue |
+    Where-Object { $_.ProviderName -notmatch 'Kernel-Processor-Power|Kernel-Boot|Hyper-V-Hypervisor' })
+  "Eventos de error consultados (muestra máxima 500): $($events.Count)"
+  if ($events.Count -eq 0) { '[OK] No se encontraron eventos de error en la muestra consultada.' }
   else {
-    $groups = $events | Group-Object ProviderName,Id | Sort-Object Count -Descending | Select-Object -First 35
+    $groups = $events | Group-Object ProviderName,Id | Sort-Object Count -Descending | Select-Object -First 40
+    $importantCount = 0
     foreach ($g in $groups) {
       $e = $g.Group | Sort-Object TimeCreated -Descending | Select-Object -First 1
       $msg = ($e.Message -replace '\s+',' ').Trim()
-      if ($msg.Length -gt 300) { $msg = $msg.Substring(0,300) + '…' }
-      $important = ($e.ProviderName -match 'WHEA|Disk|storahci|stornvme|Ntfs|Kernel-Power|BugCheck') -or ($e.Id -in 7,41,51,55,1001,129,153)
-      $tag = if ($important) { 'AVISO' } elseif ($e.Id -eq 10010 -or $e.Id -eq 2042) { 'INFO' } else { 'INFO' }
+      if ($msg.Length -gt 320) { $msg = $msg.Substring(0,320) + '…' }
+      $important = Test-ImportantDiagnosticEvent $e
+      if ($important) { $importantCount++ }
+      $tag = if ($important) { 'AVISO' } else { 'INFO' }
       "[$tag] $($e.ProviderName) | Evento $($e.Id) | Repeticiones en la muestra: $($g.Count) | Último: $($e.TimeCreated) | $msg"
     }
-    if (@($events | Where-Object { $_.ProviderName -match 'WHEA|Disk|storahci|stornvme|Ntfs|Kernel-Power|BugCheck' -or $_.Id -in 7,41,51,55,1001,129,153 }).Count -gt 0) { '[AVISO] Se encontraron eventos relacionados con estabilidad, hardware o almacenamiento que merecen revisión.' }
+    if ($importantCount -gt 0) { '[AVISO] Se encontraron eventos específicos de corrupción NTFS, errores de almacenamiento, fallos de hardware o cierres inesperados.' }
   }
 } catch { "[NO VERIFICADO] No se pudieron consultar los registros: $($_.Exception.Message)" }
 'Los eventos se agrupan para reducir duplicados. Los eventos DCOM 10010 no se consideran automáticamente fallas críticas.'
@@ -471,7 +508,7 @@ $ErrorActionPreference = 'Continue'
                 }
 
                 timer.Stop();
-                var details = command.Output;
+                var details = NormalizeToolOutput(check.Id, command.Output);
                 if (command.TimedOut)
                     details += Environment.NewLine + "La prueba superó el tiempo máximo permitido y fue detenida.";
                 if (command.Cancelled)
@@ -592,45 +629,69 @@ $ErrorActionPreference = 'Continue'
         if (output.Contains("[AVISO]", StringComparison.OrdinalIgnoreCase)) return FindingLevel.Warning;
         if (output.Contains("no se pudo ejecutar PowerShell", StringComparison.OrdinalIgnoreCase)) return FindingLevel.NotVerified;
 
+        int? nativeExitCode = ExtractNativeExitCode(output, id);
+
         if (id == "dism")
         {
-            if (ContainsAny(output, "No se detectó daño en el almacén de componentes", "No se detectó ningún daño en el almacén de componentes", "No component store corruption detected"))
-                return FindingLevel.Ok;
-            if (ContainsAny(output, "El almacén de componentes se puede reparar", "The component store is repairable"))
-                return FindingLevel.Warning;
-            if (ContainsAny(output, "El almacén de componentes no se puede reparar", "The component store cannot be repaired"))
+            if (nativeExitCode is null || nativeExitCode != 0) return FindingLevel.NotVerified;
+            if (ContainsAny(output, "El almacén de componentes no puede repararse", "El almacen de componentes no puede repararse", "component store cannot be repaired"))
                 return FindingLevel.Critical;
+            if (ContainsAny(output, "No se detectó daño en el almacén de componentes", "No se detectó ningún daño en el almacén de componentes", "No se detecto dano en el almacen de componentes", "No component store corruption detected"))
+                return FindingLevel.Ok;
+            if (ContainsAny(output, "componentes puede repararse", "componentes se puede reparar", "component store is repairable"))
+                return FindingLevel.Warning;
             return FindingLevel.NotVerified;
         }
 
         if (id == "sfc")
         {
-            if (ContainsAny(output, "No se encontraron infracciones de integridad", "no encontró ninguna infracción de integridad", "did not find any integrity violations", "Windows Resource Protection did not find any integrity violations"))
+            if (nativeExitCode is null || nativeExitCode != 0) return FindingLevel.NotVerified;
+            if (ContainsAny(output,
+                "No se encontraron infracciones de integridad",
+                "no encontró ninguna infracción de integridad",
+                "no encontro ninguna infraccion de integridad",
+                "did not find any integrity violations"))
                 return FindingLevel.Ok;
-            if (ContainsAny(output, "encontró archivos dañados", "found integrity violations", "cannot perform the requested operation"))
+            if (ContainsAny(output,
+                "infracciones de integridad",
+                "found integrity violations",
+                "found corrupt files",
+                "encontró archivos dañados",
+                "encontro archivos danados"))
                 return FindingLevel.Warning;
             return FindingLevel.NotVerified;
         }
 
         if (id == "chkdsk")
         {
-            if (command.ExitCode == 0) return FindingLevel.Ok;
+            if (nativeExitCode is null) return FindingLevel.NotVerified;
+            if (nativeExitCode != 0 ||
+                ContainsAny(output,
+                    "detectó problemas",
+                    "detecto problemas",
+                    "found problems",
+                    "bitmap del volumen es incorrecto",
+                    "atributo bitmap de la tabla maestra de archivos"))
+                return FindingLevel.Warning;
+            if (ContainsAny(output,
+                "no encontró problemas",
+                "no encontro problemas",
+                "found no problems",
+                "no problems were found"))
+                return FindingLevel.Ok;
             return FindingLevel.NotVerified;
         }
 
         if (output.Contains("[OK]", StringComparison.OrdinalIgnoreCase)) return FindingLevel.Ok;
-        if (id == "firewall" && output.Contains("[OK]")) return FindingLevel.Ok;
-        if (id == "devices" && output.Contains("[OK]")) return FindingLevel.Ok;
         if (id == "storage" && output.Contains("Healthy", StringComparison.OrdinalIgnoreCase)) return FindingLevel.Ok;
         if (id == "gpu" && output.Contains("Status : OK", StringComparison.OrdinalIgnoreCase)) return FindingLevel.Ok;
         if (id == "defender" &&
             output.Contains("Antivirus habilitado: True", StringComparison.OrdinalIgnoreCase) &&
             output.Contains("Protección en tiempo real: True", StringComparison.OrdinalIgnoreCase))
             return FindingLevel.Ok;
-        if (id == "network" && output.Contains("[OK]") && output.Contains("Conexión TCP 443 a microsoft.com: True"))
+        if (id == "network" && output.Contains("[OK]") &&
+            output.Contains("Conexión TCP 443 a microsoft.com: True", StringComparison.OrdinalIgnoreCase))
             return FindingLevel.Ok;
-        if (id == "updates" && output.Contains("[OK]")) return FindingLevel.Ok;
-
         if (string.IsNullOrWhiteSpace(output) ||
             output.Contains("La consulta terminó sin texto", StringComparison.OrdinalIgnoreCase))
             return FindingLevel.NotVerified;
@@ -640,6 +701,33 @@ $ErrorActionPreference = 'Continue'
             return FindingLevel.NotVerified;
 
         return FindingLevel.Info;
+    }
+
+    private static int? ExtractNativeExitCode(string output, string id)
+    {
+        var match = Regex.Match(output, @"(?im)^\s*" + Regex.Escape(id.ToUpperInvariant()) + @"_EXIT_CODE\s*=\s*(-?\d+)\s*$");
+        return match.Success && int.TryParse(match.Groups[1].Value, out int code) ? code : null;
+    }
+
+    private static string NormalizeToolOutput(string id, string output)
+    {
+        if (!string.Equals(id, "sfc", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(output))
+            return output;
+
+        var lines = output.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string line = lines[i];
+            int spacedLetterPairs = Regex.Matches(line, @"\p{L} \p{L}").Count;
+            int multiSpaceSeparators = Regex.Matches(line, @"\s{2,}").Count;
+            if (spacedLetterPairs >= 8 && multiSpaceSeparators >= 2)
+            {
+                line = Regex.Replace(line, @"(?<=\p{L}) (?=\p{L})", "");
+                line = Regex.Replace(line, @" {2,}", " ");
+                lines[i] = line;
+            }
+        }
+        return string.Join(Environment.NewLine, lines);
     }
 
     private static bool ContainsAny(string text, params string[] terms) =>
