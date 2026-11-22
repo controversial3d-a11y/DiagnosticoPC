@@ -27,6 +27,7 @@ internal sealed class MainForm : Form
     private DiagnosticReport? report;
     private string activePage = "Inicio";
     private bool isRunning;
+    private bool closeAfterCancel;
     private readonly bool isAdmin = DiagnosticEngine.IsAdministrator();
 
     private static readonly Color Background = Color.FromArgb(14, 17, 23);
@@ -501,6 +502,11 @@ internal sealed class MainForm : Form
             runButton.Enabled = true;
             cancelButton.Enabled = false;
             UpdateAdminButton();
+            if (closeAfterCancel && !IsDisposed && IsHandleCreated)
+            {
+                closeAfterCancel = false;
+                BeginInvoke(new Action(Close));
+            }
         }
     }
 
@@ -774,7 +780,7 @@ h1{font-size:28px;margin:0 0 8px}.muted{color:#aab7c8}.meta{display:flex;flex-wr
         content = Regex.Replace(content, @"\b(?:\d{1,3}\.){3}\d{1,3}\b", "[IP OCULTA]");
         content = Regex.Replace(content, @"(?i)\bS-1-5-21-(?:\d+-){3}\d+\b", "[SID OCULTO]");
         content = Regex.Replace(content, @"(?i)C:\\Users\\[^\\\r\n]+", @"C:\Users\[USUARIO OCULTO]");
-        content = Regex.Replace(content, @"(?im)^(Usuario|Usuario actual|Equipo|SerialNumber|UUID)\s*:\s*.*$", "$1: [OCULTO]");
+        content = Regex.Replace(content, @"(?im)^(Usuario|Usuario actual|User|Equipo|SerialNumber|UUID)\s*:\s*.*$", "$1: [OCULTO]");
         return content;
     }
 
@@ -820,7 +826,14 @@ h1{font-size:28px;margin:0 0 8px}.muted{color:#aab7c8}.meta{display:flex;flex-wr
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        if (isRunning) cancellation?.Cancel();
+        if (isRunning)
+        {
+            e.Cancel = true;
+            closeAfterCancel = true;
+            statusLabel.Text = "Cancelando la prueba activa y cerrando de forma segura...";
+            cancellation?.Cancel();
+            return;
+        }
         base.OnFormClosing(e);
     }
 
