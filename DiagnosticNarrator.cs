@@ -197,8 +197,9 @@ public static class DiagnosticNarrator
             case "dism":
                 headline = "Integridad del almacén de componentes de Windows";
                 explanation = "DISM ScanHealth examina el almacén de componentes de Windows. No ejecuta la reparación RestoreHealth.";
-                if (text.Contains("740", StringComparison.OrdinalIgnoreCase))
-                    facts.Add("La comprobación requiere permisos de administrador y no pudo iniciarse.");
+                if (text.Contains("No se ejecutó porque esta sesión", StringComparison.OrdinalIgnoreCase) ||
+                    text.Contains("740", StringComparison.OrdinalIgnoreCase))
+                    facts.Add("La comprobación no se ejecutó porque requiere permisos de administrador.");
                 else if (Contains(text, "no se detectó daño", "no component store corruption detected"))
                     facts.Add("DISM no informó daños en el almacén de componentes.");
                 else if (Contains(text, "se puede reparar", "component store is repairable"))
@@ -212,7 +213,9 @@ public static class DiagnosticNarrator
             case "sfc":
                 headline = "Integridad de archivos protegidos de Windows";
                 explanation = "SFC VerifyOnly comprueba archivos protegidos del sistema sin intentar repararlos.";
-                if (Contains(text, "no se encontraron infracciones", "did not find any integrity violations"))
+                if (text.Contains("No se ejecutó porque esta sesión", StringComparison.OrdinalIgnoreCase))
+                    facts.Add("La comprobación no se ejecutó porque requiere permisos de administrador.");
+                else if (Contains(text, "no se encontraron infracciones", "did not find any integrity violations"))
                     facts.Add("Windows no informó infracciones de integridad.");
                 else if (Contains(text, "encontró archivos dañados", "found integrity violations"))
                     facts.Add("Windows informó archivos protegidos con problemas de integridad.");
@@ -225,7 +228,9 @@ public static class DiagnosticNarrator
             case "chkdsk":
                 headline = "Sistema de archivos de la unidad del sistema";
                 explanation = "CHKDSK /scan solicita una exploración en línea de NTFS. No se utilizan opciones de reparación.";
-                if (Contains(text, "no encontró problemas", "found no problems"))
+                if (text.Contains("No se ejecutó porque esta sesión", StringComparison.OrdinalIgnoreCase))
+                    facts.Add("La comprobación no se ejecutó porque requiere permisos de administrador.");
+                else if (Contains(text, "no encontró problemas", "found no problems"))
                     facts.Add("La exploración no informó problemas en el sistema de archivos.");
                 else if (Contains(text, "found problems", "se encontraron problemas"))
                     facts.Add("La exploración informó problemas que requieren revisión.");
