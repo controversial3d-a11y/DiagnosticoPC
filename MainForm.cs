@@ -1104,15 +1104,6 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:9px 0 0;padding:12px;bord
         _ => Accent
     };
 
-    private static string OverallText(int critical, int warnings, int notVerified, bool cancelled)
-    {
-        if (cancelled) return "El análisis se canceló. Los resultados son parciales.";
-        if (critical > 0) return $"Se detectaron {critical} resultado(s) críticos que requieren revisión prioritaria.";
-        if (warnings > 0) return $"Se detectaron {warnings} observación(es) que conviene revisar.";
-        if (notVerified > 0) return "No se detectaron alertas confirmadas, pero algunas pruebas no pudieron verificarse.";
-        return "No se detectaron observaciones en las pruebas completadas.";
-    }
-
     private static void ConfigureButton(Button button, string text, Color back, Color fore, int width)
     {
         button.Text = text;
