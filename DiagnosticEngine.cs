@@ -78,6 +78,18 @@ $product = Get-CimInstance Win32_ComputerSystemProduct
 $cpu | Select-Object Name,Manufacturer,NumberOfCores,NumberOfLogicalProcessors,MaxClockSpeed,CurrentClockSpeed,LoadPercentage | Format-List | Out-String -Width 200
 '=== PLACA MADRE ==='
 $board | Select-Object Manufacturer,Product,Version,SerialNumber | Format-List | Out-String -Width 200
+'=== MÓDULOS DE MEMORIA RAM ==='
+try {
+  Get-CimInstance Win32_PhysicalMemory | Select-Object @{N='CapacidadGB';E={[math]::Round($_.Capacity / 1GB, 1)}},Speed,ConfiguredClockSpeed,Manufacturer,PartNumber,DeviceLocator | Format-Table -AutoSize | Out-String -Width 220
+} catch { 'No se pudo consultar el detalle de los módulos RAM.' }
+'=== ZONAS TÉRMICAS ACPI (SI EL FIRMWARE LAS EXPONE) ==='
+try {
+  $zones = @(Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction Stop)
+  if ($zones.Count -gt 0) {
+    $zones | Select-Object InstanceName,@{N='TemperaturaC';E={[math]::Round(($_.CurrentTemperature / 10) - 273.15, 1)}} | Format-Table -AutoSize | Out-String -Width 180
+    'Estas zonas ACPI no representan necesariamente la temperatura real del CPU o de la GPU.'
+  } else { 'El firmware no informó zonas térmicas ACPI.' }
+} catch { 'Temperaturas ACPI no disponibles mediante esta interfaz.' }
 '=== BIOS / UEFI ==='
 $bios | Select-Object Manufacturer,SMBIOSBIOSVersion,ReleaseDate | Format-List | Out-String -Width 200
 '=== IDENTIFICACIÓN DEL EQUIPO ==='
@@ -128,6 +140,10 @@ try {
   $disks = Get-PhysicalDisk -ErrorAction Stop
   $disks | Select-Object FriendlyName,MediaType,BusType,HealthStatus,OperationalStatus,@{N='TamañoGB';E={[math]::Round($_.Size / 1GB, 1)}} | Format-Table -AutoSize | Out-String -Width 200
   foreach ($d in $disks) {
+    if ($d.HealthStatus -eq 'Unhealthy') { "[CRITICO] El disco $($d.FriendlyName) informa estado Unhealthy." }
+    elseif ($d.HealthStatus -eq 'Warning') { "[AVISO] El disco $($d.FriendlyName) informa estado Warning." }
+    elseif ($d.HealthStatus -ne 'Healthy') { "[NO VERIFICADO] Estado de salud no concluyente para $($d.FriendlyName): $($d.HealthStatus)" }
+    if (($d.OperationalStatus -join ',') -notmatch 'OK|Online') { "[AVISO] Estado operativo a revisar para $($d.FriendlyName): $($d.OperationalStatus -join ', ')" }
     "Fiabilidad de: $($d.FriendlyName)"
     try {
       $rel = Get-StorageReliabilityCounter -PhysicalDisk $d -ErrorAction Stop
@@ -237,6 +253,7 @@ try {
 try {
   $ss = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer' -ErrorAction Stop
   "SmartScreen: $($ss.SmartScreenEnabled)"
+  if ($ss.SmartScreenEnabled -eq 'Off') { '[AVISO] SmartScreen aparece desactivado.' }
 } catch { 'No se encontró el valor de configuración de SmartScreen en esa ubicación.' }
 '=== SEGURIDAD BASADA EN VIRTUALIZACIÓN ==='
 try {
@@ -290,7 +307,17 @@ try {
 } catch { "Configuración proxy no disponible: $($_.Exception.Message)" }
 '=== PUERTOS LOCALES EN ESCUCHA (MUESTRA DE HASTA 40) ==='
 try {
-  Get-NetTCPConnection -State Listen -ErrorAction Stop | Sort-Object LocalPort | Select-Object -First 40 LocalAddress,LocalPort,OwningProcess | Format-Table -AutoSize | Out-String -Width 180
+  $listeners = @(Get-NetTCPConnection -State Listen -ErrorAction Stop | Sort-Object LocalPort | Select-Object -First 40)
+  foreach ($listener in $listeners) {
+    $proc = Get-Process -Id $listener.OwningProcess -ErrorAction SilentlyContinue
+    $meaning = switch ($listener.LocalPort) {
+      22 { 'SSH' } 445 { 'Compartición SMB' } 3389 { 'Escritorio remoto RDP' }
+      5900 { 'VNC' } 5985 { 'WinRM HTTP' } 5986 { 'WinRM HTTPS' }
+      default { '' }
+    }
+    "$($listener.LocalAddress):$($listener.LocalPort) | PID $($listener.OwningProcess) | $($proc.ProcessName) | $meaning"
+    if ($listener.LocalPort -in 22,445,3389,5900,5985,5986) { "[INFO] Servicio de red asociado a un puerto conocido: $($listener.LocalPort) ($meaning). La escucha local no implica que sea accesible desde Internet." }
+  }
 } catch { "No se pudieron consultar puertos en escucha: $($_.Exception.Message)" }
 'No se consultan contraseñas Wi-Fi ni se cambian adaptadores, DNS, proxy o firewall.'
 """, TimeSpan.FromSeconds(150)),
@@ -300,14 +327,23 @@ $ErrorActionPreference = 'Continue'
 try {
   $items = @(Get-CimInstance Win32_StartupCommand -ErrorAction Stop | Sort-Object Name)
   "Entradas de inicio detectadas: $($items.Count)"
-  $items | Select-Object Name,Command,Location,User | Format-List | Out-String -Width 220
+  $items | Select-Object @{N='Categoría';E={
+    $v = "$($_.Name) $($_.Command)"
+    if ($v -match '(?i)AnyDesk|TeamViewer|RustDesk|Chrome Remote Desktop|AeroAdmin|Remote Utilities') { 'Acceso remoto' }
+    elseif ($v -match '(?i)Steam|EpicGames|Roblox|Discord|EA Desktop') { 'Juegos / comunicación' }
+    elseif ($v -match '(?i)Autodesk|Chaos|V-Ray|Adsk') { 'Software profesional / licencias' }
+    elseif ($v -match '(?i)Defender|SecurityHealth|Windows Security') { 'Seguridad de Windows' }
+    else { 'Aplicación / servicio' }
+  }},Name,Command,Location,User | Format-List | Out-String -Width 220
+  $remote = @($items | Where-Object { "$($_.Name) $($_.Command)" -match '(?i)AnyDesk|TeamViewer|RustDesk|Chrome Remote Desktop|AeroAdmin|Remote Utilities' })
+  if ($remote.Count -gt 0) { "[INFO] Hay $($remote.Count) entrada(s) de herramientas de acceso remoto configuradas para iniciar. Revisá que las reconozcas." }
   'Las entradas se muestran para revisión. No se deshabilita ni elimina ninguna.'
 } catch { "No se pudo consultar el inicio automático: $($_.Exception.Message)" }
 """, TimeSpan.FromSeconds(90)),
 
         new("services", "Windows", "Servicios relevantes del sistema", """
 $ErrorActionPreference = 'Continue'
-$names = 'WinDefend','mpssvc','wuauserv','BITS','EventLog','Schedule','Dhcp','Dnscache','WlanSvc','CryptSvc','Winmgmt'
+$names = 'WinDefend','mpssvc','wuauserv','BITS','EventLog','Schedule','Dhcp','Dnscache','WlanSvc','CryptSvc','Winmgmt','AnyDesk','TeamViewer'
 foreach ($n in $names) {
   try {
     $s = Get-Service -Name $n -ErrorAction Stop
