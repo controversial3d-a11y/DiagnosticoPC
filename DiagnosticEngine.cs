@@ -189,7 +189,7 @@ try {
   if (-not $s.AMServiceEnabled -or -not $s.AntivirusEnabled -or -not $s.RealTimeProtectionEnabled) { '[CRITICO] Una o más protecciones principales de Defender están desactivadas.' }
   if ($s.AntivirusSignatureLastUpdated -and ((Get-Date) - $s.AntivirusSignatureLastUpdated).TotalDays -gt 7) { '[AVISO] Las firmas de Defender tienen más de 7 días.' }
   if ($s.FullScanAge -ge 30) { '[AVISO] No se registra un análisis completo de Defender en los últimos 30 días.' }
-} catch { "No se pudo consultar Defender: $($_.Exception.Message)" }
+} catch { "[NO VERIFICADO] No se pudo consultar Defender: $($_.Exception.Message)" }
 '=== DETECCIONES REGISTRADAS ==='
 try {
   $d = @(Get-MpThreatDetection -ErrorAction Stop | Sort-Object InitialDetectionTime -Descending)
@@ -207,7 +207,7 @@ try {
   $profiles | Select-Object Name,Enabled,DefaultInboundAction,DefaultOutboundAction,NotifyOnListen | Format-Table -AutoSize | Out-String -Width 180
   if (@($profiles | Where-Object { -not $_.Enabled }).Count -gt 0) { '[CRITICO] Hay uno o más perfiles del Firewall desactivados.' }
   else { '[OK] Los perfiles consultados del Firewall están habilitados.' }
-} catch { "No se pudo consultar Firewall: $($_.Exception.Message)" }
+} catch { "[NO VERIFICADO] No se pudo consultar Firewall: $($_.Exception.Message)" }
 """, TimeSpan.FromSeconds(90)),
 
         new("security-posture", "Seguridad", "TPM, Secure Boot, BitLocker y protecciones", """
@@ -217,17 +217,17 @@ try {
   $sb = Confirm-SecureBootUEFI -ErrorAction Stop
   "Secure Boot habilitado: $sb"
   if (-not $sb) { '[AVISO] Secure Boot está desactivado.' }
-} catch { "Secure Boot no verificable en esta sesión: $($_.Exception.Message)" }
+} catch { "[NO VERIFICADO] Secure Boot no verificable en esta sesión: $($_.Exception.Message)" }
 '=== TPM ==='
 try {
   $t = Get-Tpm -ErrorAction Stop
   $t | Select-Object TpmPresent,TpmReady,TpmEnabled,TpmActivated,ManufacturerIdTxt,ManufacturerVersion | Format-List | Out-String -Width 180
   if (-not $t.TpmPresent -or -not $t.TpmReady) { '[AVISO] TPM no presente o no preparado, revisar compatibilidad y configuración.' }
-} catch { "No se pudo consultar TPM: $($_.Exception.Message)" }
+} catch { "[NO VERIFICADO] No se pudo consultar TPM: $($_.Exception.Message)" }
 '=== BITLOCKER (SIN CLAVES DE RECUPERACIÓN) ==='
 try {
   Get-BitLockerVolume -ErrorAction Stop | Select-Object MountPoint,VolumeType,VolumeStatus,ProtectionStatus,EncryptionPercentage,EncryptionMethod | Format-Table -AutoSize | Out-String -Width 200
-} catch { "Estado BitLocker no disponible: $($_.Exception.Message)" }
+} catch { "[NO VERIFICADO] Estado BitLocker no disponible: $($_.Exception.Message)" }
 '=== UAC Y SMARTSCREEN ==='
 try {
   $u = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -ErrorAction Stop
@@ -241,7 +241,7 @@ try {
 '=== SEGURIDAD BASADA EN VIRTUALIZACIÓN ==='
 try {
   Get-CimInstance -Namespace root\Microsoft\Windows\DeviceGuard -ClassName Win32_DeviceGuard -ErrorAction Stop | Select-Object VirtualizationBasedSecurityStatus,SecurityServicesConfigured,SecurityServicesRunning | Format-List | Out-String -Width 180
-} catch { "Estado de seguridad basada en virtualización no disponible: $($_.Exception.Message)" }
+} catch { "[NO VERIFICADO] Estado de seguridad basada en virtualización no disponible: $($_.Exception.Message)" }
 'La ausencia de BitLocker, Secure Boot o VBS se informa como postura de seguridad; no se modifica ninguna configuración.'
 """, TimeSpan.FromSeconds(120)),
 
@@ -337,7 +337,7 @@ try {
     }
     if (@($events | Where-Object { $_.ProviderName -match 'WHEA|Disk|storahci|stornvme|Ntfs|Kernel-Power|BugCheck' -or $_.Id -in 7,41,51,55,1001,129,153 }).Count -gt 0) { '[AVISO] Se encontraron eventos relacionados con estabilidad, hardware o almacenamiento que merecen revisión.' }
   }
-} catch { "No se pudieron consultar los registros: $($_.Exception.Message)" }
+} catch { "[NO VERIFICADO] No se pudieron consultar los registros: $($_.Exception.Message)" }
 'Los eventos se agrupan para reducir duplicados. Los eventos DCOM 10010 no se consideran automáticamente fallas críticas.'
 """, TimeSpan.FromSeconds(150)),
 
@@ -546,13 +546,16 @@ $ErrorActionPreference = 'Continue'
     private static FindingLevel Evaluate(string id, string output, CommandResult command)
     {
         if (command.TimedOut) return FindingLevel.NotVerified;
+        if (output.Contains("[NO VERIFICADO]", StringComparison.OrdinalIgnoreCase) ||
+            output.Contains("La consulta terminó sin texto de salida", StringComparison.OrdinalIgnoreCase))
+            return FindingLevel.NotVerified;
         if (output.Contains("[CRITICO]", StringComparison.OrdinalIgnoreCase)) return FindingLevel.Critical;
         if (output.Contains("[AVISO]", StringComparison.OrdinalIgnoreCase)) return FindingLevel.Warning;
         if (output.Contains("no se pudo ejecutar PowerShell", StringComparison.OrdinalIgnoreCase)) return FindingLevel.NotVerified;
 
         if (id == "dism")
         {
-            if (ContainsAny(output, "No se detectó daño en el almacén de componentes", "No component store corruption detected"))
+            if (ContainsAny(output, "No se detectó daño en el almacén de componentes", "No se detectó ningún daño en el almacén de componentes", "No component store corruption detected"))
                 return FindingLevel.Ok;
             if (ContainsAny(output, "El almacén de componentes se puede reparar", "The component store is repairable"))
                 return FindingLevel.Warning;
@@ -563,7 +566,7 @@ $ErrorActionPreference = 'Continue'
 
         if (id == "sfc")
         {
-            if (ContainsAny(output, "No se encontraron infracciones de integridad", "did not find any integrity violations"))
+            if (ContainsAny(output, "No se encontraron infracciones de integridad", "no encontró ninguna infracción de integridad", "did not find any integrity violations", "Windows Resource Protection did not find any integrity violations"))
                 return FindingLevel.Ok;
             if (ContainsAny(output, "encontró archivos dañados", "found integrity violations", "cannot perform the requested operation"))
                 return FindingLevel.Warning;
@@ -572,7 +575,7 @@ $ErrorActionPreference = 'Continue'
 
         if (id == "chkdsk")
         {
-            if (ContainsAny(output, "Windows ha examinado el sistema de archivos y no encontró problemas", "Windows has scanned the file system and found no problems"))
+            if (ContainsAny(output, "Windows ha examinado el sistema de archivos y no encontró problemas", "Windows examinó el sistema de archivos y no encontró problemas", "Windows has scanned the file system and found no problems"))
                 return FindingLevel.Ok;
             if (ContainsAny(output, "found problems", "se encontraron problemas"))
                 return FindingLevel.Warning;
