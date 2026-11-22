@@ -288,7 +288,7 @@ sfc.exe /verifyonly
 $since = (Get-Date).AddDays(-7)
 try {
   Get-WinEvent -FilterHashtable @{LogName='System'; Level=1,2; StartTime=$since} -MaxEvents 40 -ErrorAction Stop |
-    Select-Object TimeCreated,ProviderName,Id,LevelDisplayName,@{N='Mensaje';E={($_.Message -replace '\\s+',' ').Substring(0,[Math]::Min(260,($_.Message -replace '\\s+',' ').Length))}} |
+    Select-Object TimeCreated,ProviderName,Id,LevelDisplayName,@{N='Mensaje';E={($_.Message -replace '\s+',' ').Substring(0,[Math]::Min(260,($_.Message -replace '\s+',' ').Length))}} |
     Format-List
 } catch { 'No se encontraron eventos críticos/errores o no se pudo leer el registro: ' + $_.Exception.Message }
 ", 120000);
