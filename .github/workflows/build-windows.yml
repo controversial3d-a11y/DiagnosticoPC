@@ -1,4 +1,4 @@
-name: Build Windows portable EXE
+name: Build DiagnosticoPC Windows
 
 on:
   push:
@@ -10,32 +10,57 @@ permissions:
 
 jobs:
   build:
+    name: Build and publish Windows x64
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup .NET
+
+      - name: Setup .NET 10 LTS
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
-      - name: Publish single-file portable executable
-        run: dotnet publish DiagnosticoPC.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
-      - name: Upload executable
+          dotnet-version: 10.0.x
+
+      - name: Show SDK information
+        run: dotnet --info
+
+      - name: Restore and compile
+        run: dotnet build DiagnosticoPC.csproj -c Release
+
+      - name: Publish self-contained single-file executable
+        run: dotnet publish DiagnosticoPC.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=2.0.0 -p:AssemblyVersion=2.0.0.0 -p:FileVersion=2.0.0.0 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Verify executable
+        shell: pwsh
+        run: |
+          $exe = "bin/Release/net10.0-windows/win-x64/publish/DiagnosticoPC.exe"
+          if (!(Test-Path $exe)) { throw "No se generó el ejecutable esperado: $exe" }
+          $file = Get-Item $exe
+          Write-Host "Executable: $($file.FullName)"
+          Write-Host "Size: $($file.Length) bytes"
+          if ($file.Length -lt 50000000) { throw "El ejecutable parece incompleto." }
+
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DiagnosticoPC-Windows-x64
-          path: bin/Release/net8.0-windows/win-x64/publish/DiagnosticoPC.exe
+          name: DiagnosticoPC-2.0-Windows-x64
+          path: bin/Release/net10.0-windows/win-x64/publish/DiagnosticoPC.exe
           if-no-files-found: error
           retention-days: 30
 
       - name: Publish downloadable GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: DiagnosticoPC v1.0.${{ github.run_number }}
+          tag_name: v2.0.${{ github.run_number }}
+          name: Diagnóstico PC 2.0.${{ github.run_number }}
           body: |
-            Ejecutable portable para Windows 11 x64.
-            Descargá DiagnosticoPC.exe y ejecutalo. No requiere instalación.
-            Aplicación de diagnóstico de solo lectura.
-          files: bin/Release/net8.0-windows/win-x64/publish/DiagnosticoPC.exe
+            Diagnóstico PC 2.0
+            - Aplicación portable para Windows 11 x64.
+            - Motor de pruebas por secciones y resultados clasificados.
+            - Diagnóstico de hardware, almacenamiento, seguridad, red, Windows, rendimiento y dispositivos.
+            - Exportación de informes HTML imprimibles y TXT.
+            - Ejecución de solo lectura. Las pruebas profundas requieren elevación voluntaria.
+            - No instala, repara, elimina archivos ni modifica configuraciones.
+          files: bin/Release/net10.0-windows/win-x64/publish/DiagnosticoPC.exe
           make_latest: true
