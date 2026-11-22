@@ -598,7 +598,7 @@ $ErrorActionPreference = 'Continue'
                 return FindingLevel.Warning;
             if (ContainsAny(output, "El almacén de componentes no se puede reparar", "The component store cannot be repaired"))
                 return FindingLevel.Critical;
-            return command.ExitCode == 0 ? FindingLevel.Info : FindingLevel.NotVerified;
+            return FindingLevel.NotVerified;
         }
 
         if (id == "sfc")
@@ -607,7 +607,7 @@ $ErrorActionPreference = 'Continue'
                 return FindingLevel.Ok;
             if (ContainsAny(output, "encontró archivos dañados", "found integrity violations", "cannot perform the requested operation"))
                 return FindingLevel.Warning;
-            return command.ExitCode == 0 ? FindingLevel.Info : FindingLevel.NotVerified;
+            return FindingLevel.NotVerified;
         }
 
         if (id == "chkdsk")
@@ -616,13 +616,14 @@ $ErrorActionPreference = 'Continue'
                 return FindingLevel.Ok;
             if (ContainsAny(output, "found problems", "se encontraron problemas"))
                 return FindingLevel.Warning;
-            return command.ExitCode == 0 ? FindingLevel.Info : FindingLevel.NotVerified;
+            return FindingLevel.NotVerified;
         }
 
         if (output.Contains("[OK]", StringComparison.OrdinalIgnoreCase)) return FindingLevel.Ok;
         if (id == "firewall" && output.Contains("[OK]")) return FindingLevel.Ok;
         if (id == "devices" && output.Contains("[OK]")) return FindingLevel.Ok;
         if (id == "storage" && output.Contains("Healthy", StringComparison.OrdinalIgnoreCase)) return FindingLevel.Ok;
+        if (id == "gpu" && output.Contains("Status : OK", StringComparison.OrdinalIgnoreCase)) return FindingLevel.Ok;
         if (id == "defender" &&
             output.Contains("Antivirus habilitado: True", StringComparison.OrdinalIgnoreCase) &&
             output.Contains("Protección en tiempo real: True", StringComparison.OrdinalIgnoreCase))
