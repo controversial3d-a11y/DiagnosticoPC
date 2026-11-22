@@ -474,7 +474,7 @@ internal sealed class MainForm : Form
     private IEnumerable<Control> FindNavButtons()
     {
         var root = Controls.OfType<TableLayoutPanel>().FirstOrDefault();
-        if (root?.Controls.Count == 0) yield break;
+        if (root is null || root.Controls.Count == 0) yield break;
         if (root.Controls[0] is not Panel sidebar) yield break;
         foreach (Control child in sidebar.Controls)
             if (child is FlowLayoutPanel flow)
