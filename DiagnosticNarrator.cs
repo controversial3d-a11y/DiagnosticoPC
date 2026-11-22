@@ -279,12 +279,14 @@ public static class DiagnosticNarrator
             string trimmed = line.Trim();
             if (trimmed.StartsWith("[AVISO]", StringComparison.OrdinalIgnoreCase) ||
                 trimmed.StartsWith("[CRITICO]", StringComparison.OrdinalIgnoreCase) ||
-                trimmed.StartsWith("[NO VERIFICADO]", StringComparison.OrdinalIgnoreCase))
+                trimmed.StartsWith("[NO VERIFICADO]", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith("[INFO]", StringComparison.OrdinalIgnoreCase))
             {
                 string readable = trimmed
                     .Replace("[CRITICO]", "Revisión prioritaria:", StringComparison.OrdinalIgnoreCase)
                     .Replace("[AVISO]", "Observación:", StringComparison.OrdinalIgnoreCase)
-                    .Replace("[NO VERIFICADO]", "No se pudo comprobar:", StringComparison.OrdinalIgnoreCase);
+                    .Replace("[NO VERIFICADO]", "No se pudo comprobar:", StringComparison.OrdinalIgnoreCase)
+                    .Replace("[INFO]", "Información:", StringComparison.OrdinalIgnoreCase);
                 if (!facts.Contains(readable)) facts.Add(readable);
             }
         }
