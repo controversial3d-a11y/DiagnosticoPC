@@ -181,9 +181,14 @@ if ($bad.Count -eq 0) {
       default { 'Código de estado de dispositivo que requiere revisión.' }
     }
     $level = if ($code -eq 22) { 'INFO' } elseif ($code -eq 51) { 'INFO' } else { 'AVISO' }
-    $displayName = if (-not [string]::IsNullOrWhiteSpace([string]$d.Name)) { $d.Name } else { 'Nombre no informado por Windows' }
-    $manufacturer = if (-not [string]::IsNullOrWhiteSpace([string]$d.Manufacturer)) { $d.Manufacturer } else { 'No informado' }
     $deviceId = if (-not [string]::IsNullOrWhiteSpace([string]$d.PNPDeviceID)) { $d.PNPDeviceID } else { [string]$d.DeviceID }
+    $knownDevice = switch -Regex ($deviceId) {
+      '(?i)ACPI\INTC1078' { 'Intel HID Event Filter'; break }
+      '(?i)ACPI\INTC1056' { 'Intel Serial IO GPIO Host Controller'; break }
+      default { '' }
+    }
+    $displayName = if (-not [string]::IsNullOrWhiteSpace([string]$d.Name)) { $d.Name } elseif ($knownDevice) { $knownDevice } else { 'Nombre no informado por Windows' }
+    $manufacturer = if (-not [string]::IsNullOrWhiteSpace([string]$d.Manufacturer)) { $d.Manufacturer } elseif ($knownDevice) { 'Intel Corporation (identificación por hardware ID)' } else { 'No informado' }
     "[$level] $displayName | Código $code | $meaning | Fabricante: $manufacturer | ID: $deviceId"
   }
 }

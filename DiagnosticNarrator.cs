@@ -186,6 +186,12 @@ public static class DiagnosticNarrator
                 int informational = Regex.Matches(text, @"\[INFO\]", RegexOptions.IgnoreCase).Count;
                 facts.Add($"{errors} grupo(s) marcados para revisar y {informational} grupo(s) informativos.");
                 AddMarkedLines(text, facts);
+                if (text.Contains("0x00000119", StringComparison.OrdinalIgnoreCase))
+                {
+                    facts.Add("Se registró el código de pantalla azul 0x119 (VIDEO_SCHEDULER_INTERNAL_ERROR): un fallo grave del programador de vídeo.");
+                    if (Regex.IsMatch(text, @"(?i)0x00000119\s*\(\s*0x0*5"))
+                        facts.Add("El parámetro 1 es 0x5: Microsoft lo define como un fallo del controlador al procesar un comando de sistema o de paginación.");
+                }
                 recommendation = "Prestá atención a eventos repetidos de disco, almacenamiento, WHEA, Kernel-Power o BugCheck. Los eventos DCOM 10010 suelen requerir contexto y no se consideran críticos por sí solos.";
                 break;
 
@@ -238,16 +244,18 @@ public static class DiagnosticNarrator
                     facts.Add("La comprobación no se ejecutó porque requiere permisos de administrador.");
                 else if (Contains(text, "no encontró problemas", "no encontro problemas", "found no problems"))
                     facts.Add("CHKDSK no informó inconsistencias en el sistema de archivos.");
-                else if (Contains(text, "detectó problemas", "detecto problemas", "found problems", "bitmap del volumen es incorrecto", "atributo bitmap de la tabla maestra de archivos"))
+                else if (Contains(text, "detectó problemas", "detecto problemas", "detect problemas", "found problems", "bitmap del volumen es incorrecto", "mapa de bits del volumen es incorrecto", "atributo bitmap de la tabla maestra de archivos") ||
+                         Regex.IsMatch(text, @"(?im)^CHKDSK_EXIT_CODE=([1-9]\d*)"))
                 {
                     facts.Add("CHKDSK detectó inconsistencias en los metadatos NTFS. El resultado no debe considerarse correcto.");
                     if (Contains(text, "atributo bitmap", "bitmap de la tabla maestra de archivos", "mft"))
                         facts.Add("Se informó una inconsistencia en el bitmap de la tabla maestra de archivos (MFT).");
-                    if (Contains(text, "bitmap del volumen es incorrecto", "volume bitmap is incorrect"))
+                    if (Contains(text, "bitmap del volumen es incorrecto", "mapa de bits del volumen es incorrecto", "volume bitmap is incorrect"))
                         facts.Add("Se informó que el bitmap del volumen es incorrecto.");
                     if (Contains(text, "archivos no indizados recuperados", "recovered in lost files", "found."))
                         facts.Add("La salida menciona archivos huérfanos asociados a la carpeta de recuperación found.*. No la borres; comprobá si existe y conservá cualquier archivo que necesites.");
-                    facts.Add("Código de salida nativo de CHKDSK: " + (Regex.Match(text, @"(?im)^CHKDSK_EXIT_CODE=(-?\d+)").Groups[1].Value is string code && code.Length > 0 ? code : "no informado") + ".");
+                    string chkdskCode = Regex.Match(text, @"(?im)^CHKDSK_EXIT_CODE=(-?\d+)").Groups[1].Value;
+                    facts.Add("Código de salida nativo de CHKDSK: " + (string.IsNullOrWhiteSpace(chkdskCode) ? "no informado" : chkdskCode) + ".");
                 }
                 else facts.Add("No se obtuvo una conclusión reconocible. Consultá la evidencia técnica.");
                 recommendation = "Antes de reparar, respaldá los archivos importantes. Después se puede evaluar una comprobación y reparación offline de NTFS por separado. Esta aplicación no ejecuta CHKDSK /F ni modifica el volumen.";
@@ -302,7 +310,13 @@ public static class DiagnosticNarrator
                 Add(text, facts, "Fallos de aplicaciones", "Fallos de aplicaciones / Windows Error Reporting");
                 Add(text, facts, "Eventos del sistema", "Eventos de apagado inesperado / hardware / almacenamiento");
                 AddMarkedLines(text, facts);
-                recommendation = "Relacioná los eventos repetidos con la fecha y hora de los síntomas. Fallos WHEA o de disco repetidos merecen prioridad.";
+                if (text.Contains("0x00000119", StringComparison.OrdinalIgnoreCase))
+                {
+                    facts.Add("Se registró una pantalla azul 0x119 (VIDEO_SCHEDULER_INTERNAL_ERROR), asociada al programador de vídeo.");
+                    if (Regex.IsMatch(text, @"(?i)0x00000119\s*\(\s*0x0*5"))
+                        facts.Add("El parámetro 1 es 0x5: el controlador falló al procesar un comando de sistema o de paginación.");
+                }
+                recommendation = "Relacioná los eventos repetidos con la fecha y hora de los síntomas. Fallos WHEA, NTFS o de disco repetidos merecen prioridad.";
                 break;
 
             case "software-inventory":
