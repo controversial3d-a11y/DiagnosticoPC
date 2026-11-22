@@ -496,7 +496,7 @@ internal sealed class MainForm : Form
         exportButton.Enabled = false;
         progressBar.Value = 0;
         foreach (var output in pageOutputs.Values) output.Clear();
-        AddMetricCards(0, 0, 0, 0);
+        AddMetricCards(0, 0, 0, 0, 0);
         overviewOutput.Text = "Ejecutando comprobaciones. Los hallazgos aparecerán acá a medida que termine cada prueba.";
         dashboardSummary.Text = "Análisis en curso...";
         ShowPage("Inicio");
