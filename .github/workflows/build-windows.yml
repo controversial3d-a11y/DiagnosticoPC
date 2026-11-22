@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build and publish DiagnosticoPC 3.0.1 (Windows x64)
+    name: Build and publish DiagnosticoPC 3.1.0 (Windows x64)
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -33,7 +33,7 @@ jobs:
         run: dotnet build DiagnosticoPC.csproj -c Release
 
       - name: Publish self-contained single-file executable
-        run: dotnet publish DiagnosticoPC.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=3.0.1 -p:AssemblyVersion=3.0.1.0 -p:FileVersion=3.0.1.0 -p:InformationalVersion=3.0.1 -p:DebugType=None -p:DebugSymbols=false
+        run: dotnet publish DiagnosticoPC.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=3.1.0 -p:AssemblyVersion=3.1.0.0 -p:FileVersion=3.1.0.0 -p:InformationalVersion=3.1.0 -p:DebugType=None -p:DebugSymbols=false
 
       - name: Verify executable and calculate SHA256
         shell: pwsh
@@ -49,7 +49,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DiagnosticoPC-3.0.1-Windows-x64
+          name: DiagnosticoPC-3.1.0-Windows-x64
           path: bin/Release/net10.0-windows/win-x64/publish/DiagnosticoPC.exe
           if-no-files-found: error
           retention-days: 30
@@ -57,17 +57,18 @@ jobs:
       - name: Publish downloadable GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.1
-          name: Diagnóstico PC 3.0.1
+          tag_name: v3.1.0
+          name: Diagnóstico PC 3.1.0
           body: |
-            Diagnóstico PC 3.0.1 — versión avanzada para Windows 11 x64.
+            Diagnóstico PC 3.1.0 — versión avanzada para Windows 11 x64.
             - Más de 20 comprobaciones locales de hardware, almacenamiento, Windows, seguridad, red y rendimiento.
-            - Auditoría de firma digital y SHA-256 local para ejecutables de inicio.
-            - Revisión de tareas programadas, exclusiones de Defender y patrones de fallos de 30 días.
-            - Muestra breve de CPU por proceso, inventario de software y diagnóstico de energía.
-            - Exportación HTML/TXT manual con anonimizado activado por defecto.
+            - Plan de acción numerado, ordenado por prioridad y dependencias técnicas.
+            - Cada recomendación explica qué se detectó, por qué importa, pasos concretos, comando manual cuando corresponde y referencias oficiales.
+            - Referencias estáticas de Microsoft, AMD, GIGABYTE y AnyDesk; el plan se genera localmente y no necesita conexión a Internet.
+            - Exportación HTML/TXT manual: primero el plan, luego un resumen único de comprobaciones y la evidencia técnica en un apéndice separado.
+            - Correcciones a la interpretación de SFC VerifyOnly y a la anonimización de volúmenes/unidades.
             - Sin telemetría, carga de informes ni análisis de archivos en la nube.
             - Diagnóstico de solo lectura; no instala, elimina, repara ni modifica configuraciones.
-            - DISM/SFC/CHKDSK solo se ejecutan con elevación voluntaria cuando corresponde.
+            - Los comandos de reparación se muestran como sugerencias manuales y nunca son ejecutados por la aplicación.
           files: bin/Release/net10.0-windows/win-x64/publish/DiagnosticoPC.exe
           make_latest: true

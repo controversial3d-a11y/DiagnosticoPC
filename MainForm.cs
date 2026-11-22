@@ -146,7 +146,7 @@ internal sealed class MainForm : Form
             Margin = Padding.Empty
         };
 
-        AddNav(nav, "Inicio", "Estado general");
+        AddNav(nav, "Inicio", "Plan de acción priorizado");
         AddNav(nav, "Hardware", "Componentes y unidades");
         AddNav(nav, "Seguridad", "Protecciones de Windows");
         AddNav(nav, "Red", "Internet y conectividad");
@@ -208,7 +208,7 @@ internal sealed class MainForm : Form
         header.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         var titlePanel = new Panel { Dock = DockStyle.Fill, BackColor = Background };
-        pageTitle.Text = "Resumen general";
+        pageTitle.Text = "Plan de acción";
         pageTitle.Font = new Font("Segoe UI Semibold", 18F, FontStyle.Bold);
         pageTitle.ForeColor = Color.White;
         pageTitle.AutoSize = true;
@@ -337,7 +337,7 @@ internal sealed class MainForm : Form
 
         var intro = new Label
         {
-            Text = "Estado del equipo y puntos que requieren atención. El resumen se construye con las pruebas completadas.",
+            Text = "Lista numerada de acciones sugeridas, ordenadas por prioridad y por el orden seguro en que conviene realizarlas.",
             ForeColor = Muted,
             Font = new Font("Segoe UI", 9.5F),
             Dock = DockStyle.Fill,
@@ -372,7 +372,7 @@ internal sealed class MainForm : Form
         var detailsPanel = new Panel { Dock = DockStyle.Fill, BackColor = Surface, Padding = new Padding(14) };
         var detailsTitle = new Label
         {
-            Text = "HALLAZGOS Y RECOMENDACIONES",
+            Text = "PLAN DE ACCIÓN — LISTA ORDENADA",
             Font = new Font("Segoe UI Semibold", 8.5F, FontStyle.Bold),
             ForeColor = Accent,
             Dock = DockStyle.Top,
@@ -385,7 +385,9 @@ internal sealed class MainForm : Form
         overviewOutput.BorderStyle = BorderStyle.None;
         overviewOutput.Font = new Font("Segoe UI", 9.5F);
         overviewOutput.WordWrap = true;
-        overviewOutput.Text = "Cuando finalice el análisis, esta pantalla mostrará los problemas encontrados y las acciones recomendadas.";
+        overviewOutput.DetectUrls = true;
+        overviewOutput.LinkClicked += OnReferenceLinkClicked;
+        overviewOutput.Text = "Cuando finalice el análisis, esta pantalla mostrará una lista numerada de acciones concretas y referencias técnicas para cada hallazgo.";
         detailsPanel.Controls.Add(overviewOutput);
         detailsPanel.Controls.Add(detailsTitle);
 
@@ -428,6 +430,7 @@ internal sealed class MainForm : Form
             HideSelection = false,
             Padding = new Padding(8)
         };
+        output.LinkClicked += OnReferenceLinkClicked;
         pageOutputs[title] = output;
 
         var container = new Panel { Dock = DockStyle.Fill, BackColor = Surface, Padding = new Padding(16) };
@@ -447,7 +450,7 @@ internal sealed class MainForm : Form
 
         pageTitle.Text = name switch
         {
-            "Inicio" => "Resumen general",
+            "Inicio" => "Plan de acción",
             "Hardware" => "Hardware y almacenamiento",
             "Seguridad" => "Seguridad del equipo",
             "Red" => "Red y conectividad",
@@ -499,7 +502,7 @@ internal sealed class MainForm : Form
         progressBar.Value = 0;
         foreach (var output in pageOutputs.Values) output.Clear();
         AddMetricCards(0, 0, 0, 0, 0);
-        overviewOutput.Text = "Ejecutando comprobaciones. Los hallazgos aparecerán acá a medida que termine cada prueba.";
+        overviewOutput.Text = "Ejecutando comprobaciones. El plan de acción se ordenará a medida que se completen las pruebas.";
         dashboardSummary.Text = "Análisis en curso...";
         ShowPage("Inicio");
         statusLabel.Text = "Preparando diagnóstico...";
@@ -596,54 +599,62 @@ internal sealed class MainForm : Form
         {
             output.SelectionColor = Muted;
             output.SelectionFont = new Font("Segoe UI", 10F);
-            output.AppendText("Todavía no hay resultados para esta sección.\r\n\r\nIniciá el análisis desde «Resumen general». Las comprobaciones aparecerán acá al completarse.");
+            output.AppendText("Todavía no hay resultados para esta sección.\r\n\r\nIniciá el análisis desde «Plan de acción». Las comprobaciones aparecerán acá al completarse.");
             return;
         }
 
-        foreach (var entry in entries)
+        var recommendations = RecommendationEngine.Build(entries);
+        if (recommendations.Count > 0)
+        {
+            output.SelectionColor = Accent;
+            output.SelectionFont = new Font("Segoe UI Semibold", 10F, FontStyle.Bold);
+            output.AppendText("ACCIONES RECOMENDADAS PARA ESTA SECCIÓN\r\n\r\n");
+            AppendRichRecommendations(output, recommendations);
+        }
+        else
+        {
+            output.SelectionColor = Good;
+            output.SelectionFont = new Font("Segoe UI Semibold", 10F, FontStyle.Bold);
+            output.AppendText("No se generaron acciones correctivas para esta sección con la evidencia disponible.\r\n\r\n");
+        }
+
+        output.SelectionColor = Accent;
+        output.SelectionFont = new Font("Segoe UI Semibold", 10F, FontStyle.Bold);
+        output.AppendText("RESULTADOS DE LAS COMPROBACIONES\r\n\r\n");
+
+        int index = 0;
+        foreach (var entry in entries.OrderBy(x => SeverityOrder(x.Level)).ThenBy(x => x.Title, StringComparer.CurrentCulture))
         {
             var narrative = DiagnosticNarrator.Create(entry);
-            output.SelectionStart = output.TextLength;
+            index++;
             output.SelectionColor = LevelColor(entry.Level);
-            output.SelectionFont = new Font("Segoe UI Semibold", 10.5F, FontStyle.Bold);
-            output.AppendText($"{LevelText(entry.Level)}  ·  {entry.Title}\r\n");
-
-            output.SelectionColor = Color.White;
-            output.SelectionFont = new Font("Segoe UI Semibold", 11F, FontStyle.Bold);
-            output.AppendText(narrative.Headline + "\r\n");
-
-            output.SelectionColor = Muted;
-            output.SelectionFont = new Font("Segoe UI", 8.5F);
-            output.AppendText($"Duración de la prueba: {entry.Duration:mm\\:ss}\r\n");
+            output.SelectionFont = new Font("Segoe UI Semibold", 9.5F, FontStyle.Bold);
+            output.AppendText($"{index}. [{LevelText(entry.Level)}] {entry.Title}\r\n");
 
             output.SelectionColor = TextMain;
-            output.SelectionFont = new Font("Segoe UI", 9.5F);
-            output.AppendText(narrative.Explanation + "\r\n");
+            output.SelectionFont = new Font("Segoe UI Semibold", 10F, FontStyle.Bold);
+            output.AppendText(narrative.Headline + "\r\n");
 
             foreach (string fact in narrative.Facts)
             {
                 output.SelectionColor = TextMain;
-                output.SelectionFont = new Font("Segoe UI", 9.5F);
-                output.AppendText("  •  " + fact + "\r\n");
+                output.SelectionFont = new Font("Segoe UI", 9F);
+                output.AppendText("   • " + fact + "\r\n");
             }
 
-            output.SelectionColor = Accent;
-            output.SelectionFont = new Font("Segoe UI Semibold", 9F, FontStyle.Bold);
-            output.AppendText("Qué conviene hacer\r\n");
-            output.SelectionColor = TextMain;
-            output.SelectionFont = new Font("Segoe UI", 9F);
-            output.AppendText(narrative.Recommendation + "\r\n");
+            output.SelectionColor = Muted;
+            output.SelectionFont = new Font("Segoe UI", 8F);
+            output.AppendText($"   Duración: {entry.Duration:mm\\:ss}\r\n");
 
             if (showTechnicalDetails)
             {
                 output.SelectionColor = Muted;
                 output.SelectionFont = new Font("Segoe UI Semibold", 8.5F, FontStyle.Bold);
-                output.AppendText("\r\nEVIDENCIA TÉCNICA ORIGINAL\r\n");
+                output.AppendText("   EVIDENCIA TÉCNICA ORIGINAL\r\n");
                 output.SelectionColor = Color.FromArgb(205, 215, 228);
                 output.SelectionFont = new Font("Consolas", 8.5F);
                 output.AppendText(entry.Details + "\r\n");
             }
-
             output.SelectionColor = Border;
             output.SelectionFont = new Font("Segoe UI", 9F);
             output.AppendText("\r\n────────────────────────────────────────────────────────────\r\n\r\n");
@@ -662,15 +673,11 @@ internal sealed class MainForm : Form
         int info = liveEntries.Count(x => x.Level == FindingLevel.Info);
         AddMetricCards(ok, warnings, critical, notVerified, info);
 
-        var important = liveEntries
-            .Where(x => x.Level is FindingLevel.Critical or FindingLevel.Warning or FindingLevel.NotVerified)
-            .OrderBy(x => SeverityOrder(x.Level))
-            .ToList();
-
-        RenderOverview(important, isRunning);
+        var recommendations = RecommendationEngine.Build(liveEntries);
+        RenderOverview(recommendations, isRunning);
         dashboardSummary.Text = isRunning
-            ? $"Comprobaciones completadas: {liveEntries.Count} · El análisis continúa. Los resultados aún pueden cambiar."
-            : $"Comprobaciones completadas: {liveEntries.Count} · Seleccioná una sección para consultar cada resultado.";
+            ? $"Comprobaciones completadas: {liveEntries.Count} · El plan se actualiza a medida que finalizan las pruebas."
+            : $"Comprobaciones completadas: {liveEntries.Count} · Acciones sugeridas: {recommendations.Count}.";
     }
 
     private void RefreshDashboard(DiagnosticReport value)
@@ -683,59 +690,126 @@ internal sealed class MainForm : Form
         AddMetricCards(ok, warnings, critical, notVerified, info);
 
         string general = critical > 0
-            ? $"Se detectaron {critical} resultado(s) crítico(s). Revisá esos puntos primero."
+            ? $"Se detectaron {critical} resultado(s) críticos. Seguí el plan de acción desde el primer punto."
             : warnings > 0
-                ? $"Se detectaron {warnings} observación(es) que conviene revisar."
+                ? $"Se detectaron {warnings} observación(es). Seguí las acciones en el orden numerado."
                 : notVerified > 0
-                    ? "No se detectaron alertas confirmadas, pero algunas pruebas no pudieron verificarse."
+                    ? "Algunas pruebas no pudieron verificarse. Consultá las acciones de comprobación."
                     : "Las comprobaciones realizadas no detectaron observaciones.";
 
+        var recommendations = RecommendationEngine.Build(value.Entries);
         dashboardSummary.Text =
             general + $"  Duración: {value.Duration:hh\\:mm\\:ss}. " +
             $"Permisos: {(value.RanElevated ? "administrador" : "usuario estándar")}. " +
-            (value.Cancelled ? "El análisis fue cancelado; los resultados son parciales." : "El análisis finalizó.");
+            (value.Cancelled ? "El análisis fue cancelado; los resultados son parciales." : $"El análisis finalizó. Acciones sugeridas: {recommendations.Count}.");
 
-        var important = value.Entries
-            .Where(x => x.Level is FindingLevel.Critical or FindingLevel.Warning or FindingLevel.NotVerified)
-            .OrderBy(x => SeverityOrder(x.Level))
-            .ToList();
-        RenderOverview(important, false);
+        RenderOverview(recommendations, false);
     }
 
-    private void RenderOverview(IReadOnlyList<DiagnosticEntry> important, bool running)
+    private void RenderOverview(IReadOnlyList<DiagnosticRecommendation> recommendations, bool running)
     {
         overviewOutput.Clear();
-        if (important.Count == 0)
+        if (recommendations.Count == 0)
         {
             overviewOutput.SelectionColor = Good;
             overviewOutput.SelectionFont = new Font("Segoe UI Semibold", 10F, FontStyle.Bold);
-            overviewOutput.AppendText(running ? "Todavía no se registraron observaciones." : "No se detectaron observaciones en las pruebas completadas.");
+            overviewOutput.AppendText(running
+                ? "Todavía no hay acciones sugeridas. El plan se actualizará cuando terminen las comprobaciones."
+                : "No se generaron acciones correctivas o preventivas a partir de las pruebas completadas.");
             overviewOutput.SelectionColor = Muted;
             overviewOutput.SelectionFont = new Font("Segoe UI", 9F);
-            overviewOutput.AppendText("\r\nEsto no garantiza ausencia total de malware ni sustituye pruebas específicas del fabricante.");
+            overviewOutput.AppendText("\r\n\r\nEsto no garantiza ausencia total de malware ni descarta fallos intermitentes. Los estados informativos o intencionales no se elevan a problemas.");
             return;
         }
 
-        foreach (var item in important)
-        {
-            var story = DiagnosticNarrator.Create(item);
-            overviewOutput.SelectionColor = LevelColor(item.Level);
-            overviewOutput.SelectionFont = new Font("Segoe UI Semibold", 9.5F, FontStyle.Bold);
-            overviewOutput.AppendText($"{LevelText(item.Level)}  ·  {item.Title}\r\n");
-            overviewOutput.SelectionColor = TextMain;
-            overviewOutput.SelectionFont = new Font("Segoe UI", 9F);
-            overviewOutput.AppendText(story.Headline + "\r\n");
-            if (story.Facts.Count > 0)
-                overviewOutput.AppendText("  " + story.Facts[0] + "\r\n");
-            overviewOutput.SelectionColor = Muted;
-            overviewOutput.AppendText(story.Recommendation + "\r\n\r\n");
-        }
+        AppendRichRecommendations(overviewOutput, recommendations);
 
         if (running)
         {
             overviewOutput.SelectionColor = Muted;
-            overviewOutput.AppendText("El análisis sigue en curso. Este resumen se actualiza a medida que terminan las pruebas.");
+            overviewOutput.SelectionFont = new Font("Segoe UI", 8.5F);
+            overviewOutput.AppendText("\r\nEl análisis sigue en curso. El orden y el contenido del plan pueden cambiar cuando finalicen más comprobaciones.");
         }
+    }
+
+    private static void AppendRichRecommendations(RichTextBox output, IReadOnlyList<DiagnosticRecommendation> recommendations)
+    {
+        for (int index = 0; index < recommendations.Count; index++)
+        {
+            var item = recommendations[index];
+            output.SelectionColor = item.Priority switch
+            {
+                "URGENTE" => Danger,
+                "ALTA" => Warning,
+                "MEDIA" => Accent,
+                _ => Muted
+            };
+            output.SelectionFont = new Font("Segoe UI Semibold", 10F, FontStyle.Bold);
+            output.AppendText($"{index + 1}. [{item.Priority}] {item.Title}\r\n");
+
+            output.SelectionColor = TextMain;
+            output.SelectionFont = new Font("Segoe UI", 9F);
+            output.AppendText("   Qué detectó: " + item.Evidence + "\r\n");
+            output.AppendText("   Por qué importa: " + item.WhyItMatters + "\r\n");
+            output.AppendText("   Qué hacer:\r\n");
+            for (int step = 0; step < item.Steps.Count; step++)
+                output.AppendText($"      {step + 1}) {item.Steps[step]}\r\n");
+
+            if (!string.IsNullOrWhiteSpace(item.Command))
+            {
+                output.SelectionColor = Accent;
+                output.SelectionFont = new Font("Segoe UI Semibold", 9F, FontStyle.Bold);
+                output.AppendText("   Comando para ejecutar manualmente:\r\n");
+                output.SelectionColor = Color.FromArgb(210, 220, 235);
+                output.SelectionFont = new Font("Consolas", 9F);
+                output.AppendText("      " + item.Command + "\r\n");
+            }
+
+            if (!string.IsNullOrWhiteSpace(item.Caution))
+            {
+                output.SelectionColor = Warning;
+                output.SelectionFont = new Font("Segoe UI Semibold", 8.5F, FontStyle.Bold);
+                output.AppendText("   Precaución: ");
+                output.SelectionColor = TextMain;
+                output.SelectionFont = new Font("Segoe UI", 8.5F);
+                output.AppendText(item.Caution + "\r\n");
+            }
+
+            if (item.Sources.Count > 0)
+            {
+                output.SelectionColor = Muted;
+                output.SelectionFont = new Font("Segoe UI Semibold", 8.5F, FontStyle.Bold);
+                output.AppendText("   Referencias técnicas:\r\n");
+                foreach (var source in item.Sources)
+                {
+                    output.SelectionColor = Accent;
+                    output.SelectionFont = new Font("Segoe UI", 8.5F, FontStyle.Underline);
+                    output.AppendText("      • " + source.Name + " — " + source.Url + "\r\n");
+                }
+            }
+            output.SelectionColor = Border;
+            output.SelectionFont = new Font("Segoe UI", 9F);
+            output.AppendText("\r\n────────────────────────────────────────────────────────────\r\n\r\n");
+        }
+        output.SelectionStart = output.TextLength;
+        output.ScrollToCaret();
+    }
+
+    private void OnReferenceLinkClicked(object? sender, LinkClickedEventArgs e)
+    {
+        if (!Uri.TryCreate(e.LinkText, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+            return;
+        string host = uri.Host.ToLowerInvariant();
+        bool allowed = host == "learn.microsoft.com" ||
+                       host == "support.microsoft.com" ||
+                       host == "microsoft.com" ||
+                       host.EndsWith(".microsoft.com", StringComparison.Ordinal) ||
+                       host == "gigabyte.com" || host.EndsWith(".gigabyte.com", StringComparison.Ordinal) ||
+                       host == "amd.com" || host.EndsWith(".amd.com", StringComparison.Ordinal) ||
+                       host == "support.anydesk.com";
+        if (!allowed) return;
+        try { Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); }
+        catch (Exception ex) { statusLabel.Text = "No se pudo abrir la referencia: " + ex.Message; }
     }
 
     private static int SeverityOrder(FindingLevel level) => level switch
@@ -839,6 +913,7 @@ internal sealed class MainForm : Form
         int warnings = value.Entries.Count(x => x.Level == FindingLevel.Warning);
         int critical = value.Entries.Count(x => x.Level == FindingLevel.Critical);
         int notVerified = value.Entries.Count(x => x.Level == FindingLevel.NotVerified);
+        int info = value.Entries.Count(x => x.Level == FindingLevel.Info);
 
         sb.AppendLine("DIAGNÓSTICO PC — INFORME");
         sb.AppendLine(new string('=', 72));
@@ -848,45 +923,53 @@ internal sealed class MainForm : Form
         sb.AppendLine("Permisos: " + (value.RanElevated ? "Administrador" : "Usuario estándar"));
         sb.AppendLine("Resultado: " + (value.Cancelled ? "Parcial — análisis cancelado" : "Análisis finalizado"));
         sb.AppendLine();
-        sb.AppendLine("RESUMEN EJECUTIVO");
-        int info = value.Entries.Count(x => x.Level == FindingLevel.Info);
-        sb.AppendLine($"Correctas: {ok}  |  Observaciones: {warnings}  |  Críticas: {critical}  |  No verificadas: {notVerified}  |  Informativas: {info}");
+        sb.AppendLine("RESUMEN");
+        sb.AppendLine($"Correctas: {ok} | Observaciones: {warnings} | Críticas: {critical} | No verificadas: {notVerified} | Informativas: {info}");
         sb.AppendLine(OverallText(critical, warnings, notVerified, value.Cancelled));
         sb.AppendLine();
 
-        var important = value.Entries.Where(x => x.Level is FindingLevel.Critical or FindingLevel.Warning or FindingLevel.NotVerified)
-            .OrderBy(x => SeverityOrder(x.Level)).ToList();
-        sb.AppendLine("HALLAZGOS QUE REQUIEREN ATENCIÓN");
-        if (important.Count == 0) sb.AppendLine("No se registraron observaciones en las comprobaciones completadas.");
-        foreach (var entry in important)
+        var recommendations = RecommendationEngine.Build(value.Entries);
+        sb.AppendLine("PLAN DE ACCIÓN — ORDEN RECOMENDADO");
+        sb.AppendLine("Las acciones están ordenadas por prioridad y por dependencias técnicas. No se ejecutó ninguna reparación.");
+        if (recommendations.Count == 0)
+            sb.AppendLine("No se generaron acciones a partir de las pruebas completadas.");
+        for (int index = 0; index < recommendations.Count; index++)
         {
-            var story = DiagnosticNarrator.Create(entry);
+            var item = recommendations[index];
             sb.AppendLine();
-            sb.AppendLine($"[{LevelText(entry.Level)}] {entry.Title}");
-            sb.AppendLine(story.Headline);
-            sb.AppendLine(story.Explanation);
-            foreach (var fact in story.Facts) sb.AppendLine("  - " + fact);
-            sb.AppendLine("Qué conviene hacer: " + story.Recommendation);
+            sb.AppendLine($"{index + 1}. [{item.Priority}] {item.Title}");
+            sb.AppendLine("   Qué detectó: " + item.Evidence);
+            sb.AppendLine("   Por qué importa: " + item.WhyItMatters);
+            sb.AppendLine("   Qué hacer:");
+            for (int step = 0; step < item.Steps.Count; step++)
+                sb.AppendLine($"      {step + 1}) {item.Steps[step]}");
+            if (!string.IsNullOrWhiteSpace(item.Command))
+                sb.AppendLine("   Comando para ejecutar manualmente: " + item.Command);
+            if (!string.IsNullOrWhiteSpace(item.Caution))
+                sb.AppendLine("   Precaución: " + item.Caution);
+            if (item.Sources.Count > 0)
+            {
+                sb.AppendLine("   Referencias técnicas:");
+                foreach (var source in item.Sources)
+                    sb.AppendLine("      - " + source.Name + ": " + source.Url);
+            }
         }
 
         sb.AppendLine();
-        sb.AppendLine("RESULTADOS POR SECCIÓN");
-        foreach (var entry in value.Entries)
+        sb.AppendLine("RESUMEN DE COMPROBACIONES");
+        int checkIndex = 0;
+        foreach (var entry in value.Entries.OrderBy(x => SeverityOrder(x.Level)).ThenBy(x => x.Area).ThenBy(x => x.Title))
         {
             var story = DiagnosticNarrator.Create(entry);
-            sb.AppendLine();
-            sb.AppendLine(new string('-', 72));
-            sb.AppendLine($"{LevelText(entry.Level)} — {entry.Area} — {entry.Title}");
-            sb.AppendLine(story.Headline);
-            sb.AppendLine(story.Explanation);
-            foreach (var fact in story.Facts) sb.AppendLine("  - " + fact);
-            sb.AppendLine("Recomendación: " + story.Recommendation);
-            sb.AppendLine($"Duración de la prueba: {entry.Duration:mm\\:ss}");
+            checkIndex++;
+            sb.AppendLine($"{checkIndex}. [{LevelText(entry.Level)}] {entry.Area} — {entry.Title}");
+            foreach (var fact in story.Facts.Take(4))
+                sb.AppendLine("   - " + fact);
         }
 
         sb.AppendLine();
-        sb.AppendLine("APÉNDICE TÉCNICO");
-        sb.AppendLine("La salida original se conserva para poder auditar cada resultado. No es una interpretación automática.");
+        sb.AppendLine("EVIDENCIA TÉCNICA ORIGINAL");
+        sb.AppendLine("Se conserva separada del plan para no mezclar comandos, mensajes sin interpretar y recomendaciones.");
         foreach (var entry in value.Entries)
         {
             sb.AppendLine();
@@ -896,10 +979,10 @@ internal sealed class MainForm : Form
 
         sb.AppendLine();
         sb.AppendLine("ALCANCE Y LIMITACIONES");
-        sb.AppendLine("Las consultas dependen de la información que expongan Windows, firmware, dispositivos y controladores.");
+        sb.AppendLine("Las recomendaciones se generan con reglas locales basadas en las evidencias encontradas y referencias técnicas incluidas. No se consulta Internet para crear el plan.");
         sb.AppendLine("No verificado significa que no se obtuvo evidencia suficiente; no equivale a una falla confirmada.");
-        sb.AppendLine("El estado de Defender no garantiza ausencia de malware y no reemplaza un análisis antivirus completo.");
-        sb.AppendLine("Las pruebas no realizan reparaciones ni cambian configuraciones.");
+        sb.AppendLine("El estado de Defender no garantiza ausencia total de malware.");
+        sb.AppendLine("Las pruebas no realizan reparaciones ni cambian configuraciones. Los comandos mostrados son sugerencias manuales.");
         return sb.ToString();
     }
 
@@ -921,32 +1004,37 @@ internal sealed class MainForm : Form
         int notVerified = value.Entries.Count(x => x.Level == FindingLevel.NotVerified);
         int info = value.Entries.Count(x => x.Level == FindingLevel.Info);
         string verdictCss = critical > 0 ? "critical" : warnings > 0 ? "warning" : notVerified > 0 ? "pending" : "ok";
+        var recommendations = RecommendationEngine.Build(value.Entries);
 
         sb.Append("""
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Diagnóstico PC — Informe</title>
+<title>Diagnóstico PC — Plan de acción</title>
 <style>
 :root{color-scheme:light;--ink:#182333;--muted:#68778b;--line:#dfe5ec;--paper:#fff;--bg:#eef2f6;--navy:#15253a;--blue:#346aa8;--green:#19734e;--amber:#93600b;--red:#a52e37;--gray:#5e6b7c}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 "Segoe UI",Arial,sans-serif}
-main{max-width:1080px;margin:30px auto;padding:0 22px}.hero{background:var(--navy);color:#fff;padding:30px 34px;border-radius:14px}
-.eyebrow{font-size:11px;letter-spacing:1.2px;color:#b9c9dc;font-weight:700}h1{font-size:28px;line-height:1.2;margin:8px 0}.meta{display:flex;gap:20px;flex-wrap:wrap;color:#c4d0df;font-size:12px;margin-top:16px}
-.verdict{margin:18px 0;padding:17px 20px;border-radius:10px;background:#fff;border:1px solid var(--line);border-left:5px solid var(--gray)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.58 "Segoe UI",Arial,sans-serif}
+main{max-width:1080px;margin:30px auto;padding:0 22px}.hero{background:var(--navy);color:#fff;padding:28px 34px;border-radius:14px}
+.eyebrow{font-size:11px;letter-spacing:1.2px;color:#b9c9dc;font-weight:700}h1{font-size:27px;line-height:1.2;margin:8px 0}.meta{display:flex;gap:20px;flex-wrap:wrap;color:#c4d0df;font-size:12px;margin-top:16px}
+.verdict{margin:18px 0;padding:16px 20px;border-radius:10px;background:#fff;border:1px solid var(--line);border-left:5px solid var(--gray)}
 .verdict strong{display:block;font-size:16px;margin-bottom:3px}.verdict.ok{border-left-color:var(--green)}.verdict.warning{border-left-color:var(--amber)}.verdict.critical{border-left-color:var(--red)}.verdict.pending{border-left-color:var(--gray)}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}.metric,.section{background:var(--paper);border:1px solid var(--line);border-radius:11px;padding:16px}
-.metric span{display:block;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.5px}.metric b{display:block;font-size:27px;margin-top:3px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:16px 0}.metric,.section{background:var(--paper);border:1px solid var(--line);border-radius:11px;padding:16px}
+.metric span{display:block;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.5px}.metric b{display:block;font-size:26px;margin-top:3px}
 .ok{color:var(--green)}.warning{color:var(--amber)}.critical{color:var(--red)}.pending{color:var(--gray)}.info{color:var(--blue)}
-h2{font-size:18px;margin:0 0 12px}h3{font-size:14px;margin:0 0 5px}
-.section{margin:15px 0}.finding{padding:15px 0;border-top:1px solid var(--line);break-inside:avoid}.finding:first-of-type{border-top:0}
-.badge{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}.explanation{color:#39485b;margin:5px 0 8px}.facts{margin:7px 0 9px;padding-left:20px}.facts li{margin:3px 0}.action{background:#f5f8fb;border-radius:7px;padding:10px 12px;color:#314158}
-details{margin-top:9px;border:1px solid var(--line);border-radius:7px;padding:9px 11px;background:#fbfcfd}summary{cursor:pointer;color:var(--blue);font-weight:600;font-size:12px}
+h2{font-size:18px;margin:0 0 12px}.section{margin:15px 0}.section-note{color:var(--muted);font-size:12px;margin-bottom:10px}
+.actions{margin:0;padding-left:24px}.actions>li{padding:13px 0 16px 3px;border-top:1px solid var(--line);break-inside:avoid}.actions>li:first-child{border-top:0}
+.priority{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.5px;margin-right:7px}.evidence,.why{margin:7px 0;color:#39485b}.steps{margin:7px 0 8px;padding-left:24px}.steps li{margin:4px 0}
+.command{margin:9px 0;padding:10px 12px;background:#eef3f8;border-radius:7px;color:#15253a}.command code{font:13px Consolas,monospace}.caution{margin:8px 0;padding:10px 12px;background:#fff8e9;border-left:3px solid var(--amber);border-radius:5px}
+.refs{margin:5px 0;padding-left:20px;font-size:12px}.refs li{margin:3px 0}a{color:var(--blue);text-decoration:underline;overflow-wrap:anywhere}
+.checks{list-style:none;padding:0;margin:0}.checks li{padding:9px 0;border-top:1px solid var(--line)}.checks li:first-child{border-top:0}
+.badge{font-size:10px;font-weight:800;letter-spacing:.4px;display:inline-block;min-width:102px}.check-title{font-weight:600}.check-meta{color:var(--muted);font-size:11px}
+details{margin:8px 0;border:1px solid var(--line);border-radius:7px;padding:10px 12px;background:#fbfcfd;break-inside:avoid}summary{cursor:pointer;color:var(--blue);font-weight:600;font-size:12px}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:9px 0 0;padding:12px;border-radius:6px;background:#f1f4f7;color:#354254;font:11px/1.55 Consolas,monospace}
-.small{color:var(--muted);font-size:11px}.section-note{color:var(--muted);font-size:12px}.footer{color:var(--muted);font-size:11px;margin:22px 2px}
+.footer{color:var(--muted);font-size:11px;margin:22px 2px}
 @media(max-width:720px){.grid{grid-template-columns:repeat(2,1fr)}main{padding:0 12px}.hero{padding:22px}}
-@media print{body{background:#fff}main{max-width:none;margin:0;padding:0}.hero{border-radius:0;print-color-adjust:exact;-webkit-print-color-adjust:exact}.section,.metric,.verdict{break-inside:avoid}.section{margin:10px 0}details:not([open]) pre{display:block}details{break-inside:avoid}}
+@media print{body{background:#fff}main{max-width:none;margin:0;padding:0}.hero{border-radius:0;print-color-adjust:exact;-webkit-print-color-adjust:exact}.section,.metric,.verdict,details,.actions>li{break-inside:avoid}.section{margin:10px 0}details:not([open]) pre{display:block}}
 </style></head><body><main>
 """);
-        sb.Append("<header class=\"hero\"><div class=\"eyebrow\">INFORME DE DIAGNÓSTICO LOCAL</div><h1>Diagnóstico PC</h1><div>Resumen técnico del estado del equipo</div><div class=\"meta\">");
+        sb.Append("<header class=\"hero\"><div class=\"eyebrow\">INFORME DE DIAGNÓSTICO LOCAL</div><h1>Diagnóstico PC</h1><div>Plan de acción y resultados de comprobación</div><div class=\"meta\">");
         sb.Append("<span>Inicio: ").Append(WebUtility.HtmlEncode(value.StartedAt.ToString("dd/MM/yyyy HH:mm:ss"))).Append("</span>");
         sb.Append("<span>Duración: ").Append(WebUtility.HtmlEncode(value.Duration.ToString(@"hh\:mm\:ss"))).Append("</span>");
         sb.Append("<span>Permisos: ").Append(value.RanElevated ? "Administrador" : "Usuario estándar").Append("</span>");
@@ -963,53 +1051,90 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:9px 0 0;padding:12px;bord
         AddHtmlMetric(sb, "INFORMATIVAS", info, "info");
         sb.Append("</div>");
 
-        var priority = value.Entries.Where(x => x.Level is FindingLevel.Critical or FindingLevel.Warning or FindingLevel.NotVerified)
-            .OrderBy(x => SeverityOrder(x.Level)).ToList();
-        sb.Append("<section class=\"section\"><h2>Hallazgos que requieren atención</h2>");
-        if (priority.Count == 0)
-            sb.Append("<p>No se registraron observaciones en las comprobaciones completadas.</p>");
-        foreach (var entry in priority) AppendHtmlFinding(sb, entry, false);
+        sb.Append("<section class=\"section\"><h2>Plan de acción — orden recomendado</h2>");
+        sb.Append("<div class=\"section-note\">Lista numerada de acciones. Seguí el orden indicado: algunas reparaciones dependen de que la anterior haya terminado.</div>");
+        if (recommendations.Count == 0)
+            sb.Append("<p>No se generaron acciones correctivas o preventivas a partir de las pruebas completadas.</p>");
+        else
+        {
+            sb.Append("<ol class=\"actions\">");
+            foreach (var item in recommendations) AppendHtmlRecommendation(sb, item);
+            sb.Append("</ol>");
+        }
         sb.Append("</section>");
 
-        foreach (var group in value.Entries.GroupBy(x => x.Area))
+        sb.Append("<section class=\"section\"><h2>Resumen de comprobaciones</h2><div class=\"section-note\">Cada comprobación aparece una sola vez. La evidencia técnica completa se encuentra al final.</div><ol class=\"checks\">");
+        foreach (var entry in value.Entries.OrderBy(x => SeverityOrder(x.Level)).ThenBy(x => x.Area).ThenBy(x => x.Title))
         {
-            sb.Append("<section class=\"section\"><h2>").Append(WebUtility.HtmlEncode(group.Key)).Append("</h2>");
-            sb.Append("<div class=\"section-note\">Resultados de las comprobaciones de esta sección.</div>");
-            foreach (var entry in group) AppendHtmlFinding(sb, entry, true);
-            sb.Append("</section>");
+            var story = DiagnosticNarrator.Create(entry);
+            string css = entry.Level switch
+            {
+                FindingLevel.Ok => "ok",
+                FindingLevel.Warning => "warning",
+                FindingLevel.Critical => "critical",
+                FindingLevel.NotVerified => "pending",
+                _ => "info"
+            };
+            sb.Append("<li><span class=\"badge ").Append(css).Append("\">")
+              .Append(WebUtility.HtmlEncode(LevelText(entry.Level))).Append("</span> ")
+              .Append("<span class=\"check-title\">").Append(WebUtility.HtmlEncode(entry.Title)).Append("</span> ")
+              .Append("<span class=\"check-meta\">— ").Append(WebUtility.HtmlEncode(entry.Area))
+              .Append(" · ").Append(WebUtility.HtmlEncode(entry.Duration.ToString(@"mm\:ss"))).Append("</span>");
+            if (story.Facts.Count > 0)
+                sb.Append("<div class=\"check-meta\">").Append(WebUtility.HtmlEncode(string.Join(" · ", story.Facts.Take(2)))).Append("</div>");
+            sb.Append("</li>");
         }
+        sb.Append("</ol></section>");
 
-        sb.Append("<div class=\"footer\">ALCANCE: Las consultas dependen de la información que expongan Windows, firmware, dispositivos y controladores. Un resultado no verificado no equivale a una falla confirmada. El estado de Defender no garantiza ausencia total de malware. No se ejecutaron reparaciones ni cambios de configuración.</div>");
+        sb.Append("<section class=\"section\"><h2>Evidencia técnica original</h2><div class=\"section-note\">Se conserva separada de las recomendaciones para facilitar la lectura y permitir una revisión técnica posterior.</div>");
+        foreach (var entry in value.Entries)
+        {
+            sb.Append("<details><summary>").Append(WebUtility.HtmlEncode(entry.Id + " — " + entry.Title + " [" + LevelText(entry.Level) + "]")).Append("</summary><pre>")
+              .Append(WebUtility.HtmlEncode(entry.Details)).Append("</pre></details>");
+        }
+        sb.Append("</section>");
+
+        sb.Append("<div class=\"footer\">Las recomendaciones se generan localmente a partir de reglas y referencias técnicas incluidas en la aplicación. No se consulta Internet para elaborar el plan. No se suben informes ni se ejecutan reparaciones. Los comandos mencionados son acciones manuales y pueden modificar Windows o el sistema de archivos si se ejecutan.</div>");
         sb.Append("</main></body></html>");
         return sb.ToString();
     }
 
-    private static void AppendHtmlFinding(StringBuilder sb, DiagnosticEntry entry, bool includeTechnical)
+    private static void AppendHtmlRecommendation(StringBuilder sb, DiagnosticRecommendation item)
     {
-        var story = DiagnosticNarrator.Create(entry);
-        string css = entry.Level switch
+        string priorityColor = item.Priority switch
         {
-            FindingLevel.Ok => "ok",
-            FindingLevel.Warning => "warning",
-            FindingLevel.Critical => "critical",
-            FindingLevel.NotVerified => "pending",
-            _ => "info"
+            "URGENTE" => "critical",
+            "ALTA" => "warning",
+            "MEDIA" => "info",
+            _ => "pending"
         };
-        sb.Append("<article class=\"finding\"><div class=\"badge ").Append(css).Append("\">")
-          .Append(WebUtility.HtmlEncode(LevelText(entry.Level))).Append("</div><h3>")
-          .Append(WebUtility.HtmlEncode(entry.Title)).Append("</h3><div><strong>")
-          .Append(WebUtility.HtmlEncode(story.Headline)).Append("</strong></div><p class=\"explanation\">")
-          .Append(WebUtility.HtmlEncode(story.Explanation)).Append("</p><ul class=\"facts\">");
-        foreach (var fact in story.Facts)
-            sb.Append("<li>").Append(WebUtility.HtmlEncode(fact)).Append("</li>");
-        sb.Append("</ul><div class=\"action\"><strong>Qué conviene hacer:</strong> ")
-          .Append(WebUtility.HtmlEncode(story.Recommendation)).Append("</div>");
-        sb.Append("<div class=\"small\">Duración: ").Append(WebUtility.HtmlEncode(entry.Duration.ToString(@"mm\:ss")))
-          .Append(" · Código de salida: ").Append(WebUtility.HtmlEncode(entry.ExitCode?.ToString() ?? "No disponible")).Append("</div>");
-        if (includeTechnical)
-            sb.Append("<details><summary>Ver evidencia técnica original</summary><pre>")
-              .Append(WebUtility.HtmlEncode(entry.Details)).Append("</pre></details>");
-        sb.Append("</article>");
+        sb.Append("<li><div><span class=\"priority ").Append(priorityColor).Append("\">")
+          .Append(WebUtility.HtmlEncode(item.Priority)).Append("</span><strong>")
+          .Append(WebUtility.HtmlEncode(item.Title)).Append("</strong></div>")
+          .Append("<p class=\"evidence\"><strong>Qué detectó:</strong> ")
+          .Append(WebUtility.HtmlEncode(item.Evidence)).Append("</p>")
+          .Append("<p class=\"why\"><strong>Por qué importa:</strong> ")
+          .Append(WebUtility.HtmlEncode(item.WhyItMatters)).Append("</p>")
+          .Append("<strong>Qué hacer</strong><ol class=\"steps\">");
+        foreach (var step in item.Steps)
+            sb.Append("<li>").Append(WebUtility.HtmlEncode(step)).Append("</li>");
+        sb.Append("</ol>");
+        if (!string.IsNullOrWhiteSpace(item.Command))
+            sb.Append("<div class=\"command\"><strong>Comando para ejecutar manualmente:</strong><br><code>")
+              .Append(WebUtility.HtmlEncode(item.Command)).Append("</code></div>");
+        if (!string.IsNullOrWhiteSpace(item.Caution))
+            sb.Append("<div class=\"caution\"><strong>Precaución:</strong> ")
+              .Append(WebUtility.HtmlEncode(item.Caution)).Append("</div>");
+        if (item.Sources.Count > 0)
+        {
+            sb.Append("<strong>Referencias técnicas</strong><ul class=\"refs\">");
+            foreach (var source in item.Sources)
+                sb.Append("<li><a href=\"").Append(WebUtility.HtmlEncode(source.Url))
+                  .Append("\" target=\"_blank\" rel=\"noopener noreferrer\">")
+                  .Append(WebUtility.HtmlEncode(source.Name)).Append("</a></li>");
+            sb.Append("</ul>");
+        }
+        sb.Append("</li>");
     }
 
     private static void AddHtmlMetric(StringBuilder sb, string title, int count, string css)
@@ -1036,6 +1161,11 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:9px 0 0;padding:12px;bord
             match =>
             {
                 string candidate = match.Value;
+                int lineStart = content.LastIndexOf('\n', Math.Max(0, match.Index - 1));
+                string prefix = content.Substring(lineStart < 0 ? 0 : lineStart + 1, match.Index - (lineStart < 0 ? 0 : lineStart + 1));
+                if (Regex.IsMatch(prefix, @"(?im)^\s*[A-Z]:\s+(?:OperatingSystem|Data)\b") ||
+                    Regex.IsMatch(prefix, @"(?i)\b(version|versión|driver|controlador|build|compilación|firmware)\b[^\r\n]*$"))
+                    return candidate;
                 if (TimeSpan.TryParseExact(candidate, new[] { @"h\:mm\:ss", @"hh\:mm\:ss", @"m\:ss" }, CultureInfo.InvariantCulture, out _))
                     return candidate;
                 return IPAddress.TryParse(candidate, out var address) && address.AddressFamily == AddressFamily.InterNetworkV6
@@ -1143,5 +1273,5 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:9px 0 0;padding:12px;bord
     }
 
     private static string GetVersion() =>
-        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "3.0.0";
+        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "3.1.0";
 }

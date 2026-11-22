@@ -652,18 +652,15 @@ $ErrorActionPreference = 'Continue'
         if (id == "sfc")
         {
             if (nativeExitCode is null || nativeExitCode != 0) return FindingLevel.NotVerified;
-            if (ContainsAny(output,
-                "No se encontraron infracciones de integridad",
-                "no encontró ninguna infracción de integridad",
-                "no encontro ninguna infraccion de integridad",
-                "did not find any integrity violations"))
+            string compactSfc = CompactForMatching(output);
+            if (compactSfc.Contains("noseencontraroninfraccionesdeintegridad", StringComparison.Ordinal) ||
+                compactSfc.Contains("noencontroningunainfracciondeintegridad", StringComparison.Ordinal) ||
+                compactSfc.Contains("didnotfindanyintegrityviolations", StringComparison.Ordinal))
                 return FindingLevel.Ok;
-            if (ContainsAny(output,
-                "infracciones de integridad",
-                "found integrity violations",
-                "found corrupt files",
-                "encontró archivos dañados",
-                "encontro archivos danados"))
+            if (compactSfc.Contains("infraccionesdeintegridad", StringComparison.Ordinal) ||
+                compactSfc.Contains("foundintegrityviolations", StringComparison.Ordinal) ||
+                compactSfc.Contains("foundcorruptfiles", StringComparison.Ordinal) ||
+                compactSfc.Contains("encontroarchivosdanados", StringComparison.Ordinal))
                 return FindingLevel.Warning;
             return FindingLevel.NotVerified;
         }
@@ -724,16 +721,23 @@ $ErrorActionPreference = 'Continue'
         for (int i = 0; i < lines.Length; i++)
         {
             string line = lines[i];
-            int spacedLetterPairs = Regex.Matches(line, @"\p{L} \p{L}").Count;
-            int multiSpaceSeparators = Regex.Matches(line, @"\s{2,}").Count;
-            if (spacedLetterPairs >= 8 && multiSpaceSeparators >= 2)
+            int spacedLetterPairs = Regex.Matches(line, @"(?<=\p{L}) (?=\p{L})").Count;
+            if (spacedLetterPairs >= 8)
             {
+                // Remove the single spaces between individual letters, but preserve word boundaries.
                 line = Regex.Replace(line, @"(?<=\p{L}) (?=\p{L})", "");
-                line = Regex.Replace(line, @" {2,}", " ");
+                line = Regex.Replace(line, @"\s{2,}", " ");
                 lines[i] = line;
             }
         }
         return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string CompactForMatching(string value)
+    {
+        string decomposed = value.Normalize(NormalizationForm.FormD);
+        string withoutMarks = Regex.Replace(decomposed, @"\p{Mn}", "");
+        return Regex.Replace(withoutMarks, @"[^\p{L}\p{N}]", "").ToLowerInvariant();
     }
 
     private static bool ContainsAny(string text, params string[] terms) =>

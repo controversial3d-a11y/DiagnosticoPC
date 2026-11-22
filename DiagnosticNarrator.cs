@@ -225,16 +225,22 @@ public static class DiagnosticNarrator
             case "sfc":
                 headline = "Integridad de archivos protegidos de Windows";
                 explanation = "SFC VerifyOnly comprueba archivos protegidos del sistema sin intentar repararlos.";
+                string compactSfc = CompactForMatching(text);
                 if (text.Contains("No se ejecutó porque esta sesión", StringComparison.OrdinalIgnoreCase))
                     facts.Add("La comprobación no se ejecutó porque requiere permisos de administrador.");
-                else if (Contains(text, "no se encontraron infracciones", "did not find any integrity violations"))
+                else if (compactSfc.Contains("noseencontraroninfraccionesdeintegridad", StringComparison.Ordinal) ||
+                         compactSfc.Contains("noencontroningunainfracciondeintegridad", StringComparison.Ordinal) ||
+                         compactSfc.Contains("didnotfindanyintegrityviolations", StringComparison.Ordinal))
                     facts.Add("Windows no informó infracciones de integridad.");
-                else if (Contains(text, "infracciones de integridad", "found integrity violations", "found corrupt files", "encontró archivos dañados"))
+                else if (compactSfc.Contains("infraccionesdeintegridad", StringComparison.Ordinal) ||
+                         compactSfc.Contains("foundintegrityviolations", StringComparison.Ordinal) ||
+                         compactSfc.Contains("foundcorruptfiles", StringComparison.Ordinal) ||
+                         compactSfc.Contains("encontroarchivosdanados", StringComparison.Ordinal))
                     facts.Add("SFC detectó infracciones de integridad en archivos protegidos de Windows. VerifyOnly no los repara.");
                 else if (text.Contains("La consulta terminó sin texto", StringComparison.OrdinalIgnoreCase))
                     facts.Add("SFC no devolvió un resultado legible. La comprobación no puede considerarse aprobada.");
                 else facts.Add("No se obtuvo una conclusión reconocible del verificador.");
-                recommendation = "Si SFC no informa un resultado explícito, repetí la prueba como administrador y revisá el registro CBS de Windows. No se repararon archivos.";
+                recommendation = "Si se detectaron infracciones, ejecutá DISM /RestoreHealth y después sfc /scannow. VerifyOnly no repara archivos.";
                 break;
 
             case "chkdsk":
@@ -402,6 +408,13 @@ public static class DiagnosticNarrator
         "Public" => "Red pública",
         _ => profile
     };
+
+    private static string CompactForMatching(string value)
+    {
+        string decomposed = value.Normalize(System.Text.NormalizationForm.FormD);
+        string withoutMarks = Regex.Replace(decomposed, @"\p{Mn}", "");
+        return Regex.Replace(withoutMarks, @"[^\p{L}\p{N}]", "").ToLowerInvariant();
+    }
 
     private static bool Contains(string text, params string[] values) =>
         values.Any(value => text.Contains(value, StringComparison.OrdinalIgnoreCase));
