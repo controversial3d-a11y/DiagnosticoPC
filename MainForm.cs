@@ -139,7 +139,7 @@ internal sealed class MainForm : Form
 
         var bottom = new Label
         {
-            Text = "Análisis local · Solo lectura\r\nNo se envían datos a servidores.",
+            Text = "Análisis local · Solo lectura\r\nLos informes no se envían; solo se comprueba la conectividad.",
             Font = new Font("Segoe UI", 8.5F),
             ForeColor = Muted,
             Dock = DockStyle.Bottom,
