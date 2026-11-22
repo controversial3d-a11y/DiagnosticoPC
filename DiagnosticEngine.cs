@@ -403,7 +403,7 @@ $ErrorActionPreference = 'Continue'
 
         foreach (var check in Checks)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested) { report.Cancelled = true; break; }
             progress?.Report(new DiagnosticProgress(completed, Checks.Length, check.Title));
             var timer = Stopwatch.StartNew();
 
@@ -581,7 +581,11 @@ $ErrorActionPreference = 'Continue'
 
         if (id == "firewall" && output.Contains("[OK]")) return FindingLevel.Ok;
         if (id == "devices" && output.Contains("[OK]")) return FindingLevel.Ok;
-        if (id == "storage" && output.Contains("[OK]")) return FindingLevel.Ok;
+        if (id == "storage" && output.Contains("Healthy", StringComparison.OrdinalIgnoreCase)) return FindingLevel.Ok;
+        if (id == "defender" &&
+            output.Contains("Antivirus habilitado: True", StringComparison.OrdinalIgnoreCase) &&
+            output.Contains("Protección en tiempo real: True", StringComparison.OrdinalIgnoreCase))
+            return FindingLevel.Ok;
         if (id == "network" && output.Contains("[OK]") && output.Contains("Conexión TCP 443 a microsoft.com: True"))
             return FindingLevel.Ok;
         if (id == "updates" && output.Contains("[OK]")) return FindingLevel.Ok;
