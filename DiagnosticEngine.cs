@@ -398,35 +398,98 @@ function Test-ImportantDiagnosticEvent($e) {
   return $false
 }
 try {
-  # Separate limits for System and Application prevent one log from hiding the other.
-  $systemEvents = @(Get-WinEvent -FilterHashtable @{LogName='System'; Level=1,2; StartTime=$since} -MaxEvents 251 -ErrorAction SilentlyContinue)
-  $appEvents = @(Get-WinEvent -FilterHashtable @{LogName='Application'; Level=1,2; StartTime=$since} -MaxEvents 251 -ErrorAction SilentlyContinue)
-  $events = @($systemEvents + $appEvents | Where-Object {
-    $_.ProviderName -notmatch 'Kernel-Processor-Power|Kernel-Boot|Hyper-V-Hypervisor'
-  })
-  "Registros de error/advertencia de System: $([math]::Min($systemEvents.Count,250)) de una muestra máxima de 250"
-  "Registros de error/advertencia de Application: $([math]::Min($appEvents.Count,250)) de una muestra máxima de 250"
-  if ($events.Count -eq 0) { '[OK] No se encontraron eventos de error o advertencia en las muestras consultadas.' }
-  else {
+  # Dedicated event families prevent a high-volume source (for example ESENT 474)
+  # from consuming the application sample and hiding actual application crashes.
+  $definitions = @(
+    @{ Name='ESENT 474'; LogName='Application'; Ids=@(474); Limit=120; Provider='ESENT' },
+    @{ Name='Errores de aplicaciones'; LogName='Application'; Ids=@(1000,1001,1002); Limit=120; Provider='Application Error|Application Hang|Windows Error Reporting|WER' },
+    @{ Name='NTFS'; LogName='System'; Ids=@(55,98,140); Limit=120; Provider='Ntfs' },
+    @{ Name='Almacenamiento'; LogName='System'; Ids=@(7,11,15,51,129,153,157); Limit=120; Provider='Disk|storahci|stornvme|storport' },
+    @{ Name='WHEA'; LogName='System'; Ids=@(1,17,18,19,20,46,47); Limit=120; Provider='WHEA' },
+    @{ Name='Apagados y bugchecks'; LogName='System'; Ids=@(41,6008,1001); Limit=120; Provider='Kernel-Power|EventLog|BugCheck|WER-SystemErrorReporting' }
+  )
+  $records = New-Object System.Collections.Generic.List[object]
+  $saturated = New-Object System.Collections.Generic.List[string]
+  $scanBounded = New-Object System.Collections.Generic.List[string]
+  $scanLimit = 1000
+
+  foreach ($definition in $definitions) {
+    $query = @(Get-WinEvent -FilterHashtable @{
+      LogName=$definition.LogName
+      Id=$definition.Ids
+      StartTime=$since
+    } -MaxEvents ($scanLimit + 1) -ErrorAction SilentlyContinue)
+    $matching = @($query | Where-Object { $_.ProviderName -match $definition.Provider })
+    foreach ($event in @($matching | Select-Object -First $definition.Limit)) {
+      $records.Add($event)
+    }
+    "Grupo consultado: $($definition.Name) | Registros incluidos: $([math]::Min($matching.Count,$definition.Limit)) | Límite: $($definition.Limit)"
+    if ($matching.Count -gt $definition.Limit) {
+      $saturated.Add($definition.Name)
+    }
+    if ($query.Count -gt $scanLimit) {
+      $scanBounded.Add($definition.Name)
+    }
+  }
+
+  # Keep a small sample of other warnings (for example Windows Update or DCOM),
+  # while excluding the dedicated providers already gathered above.
+  $excludedProviders = 'ESENT|Application Error|Application Hang|Windows Error Reporting|WER|Ntfs|WHEA|Disk|storahci|stornvme|storport|Kernel-Power|EventLog|BugCheck'
+  $otherScanLimit = 1000
+  foreach ($logName in @('Application','System')) {
+    $otherQuery = @(Get-WinEvent -FilterHashtable @{
+      LogName=$logName
+      Level=1,2
+      StartTime=$since
+    } -MaxEvents ($otherScanLimit + 1) -ErrorAction SilentlyContinue)
+    $other = @($otherQuery | Where-Object {
+      $_.ProviderName -notmatch $excludedProviders -and
+      $_.ProviderName -notmatch 'Kernel-Processor-Power|Kernel-Boot|Hyper-V-Hypervisor'
+    } | Select-Object -First 80)
+    foreach ($event in $other) { $records.Add($event) }
+    "Otros eventos $logName incluidos: $($other.Count) | Límite: 80"
+    if ($otherQuery.Count -gt $otherScanLimit) {
+      $scanBounded.Add("Otros eventos $logName")
+    }
+  }
+
+  $events = @($records | Group-Object { "$($_.LogName)|$($_.RecordId)" } | ForEach-Object { $_.Group[0] })
+  $importantEvents = @($events | Where-Object { Test-ImportantDiagnosticEvent $_ })
+  "Registros únicos incluidos en las muestras independientes: $($events.Count)"
+  "Eventos críticos de almacenamiento/sistema/bugcheck identificados: $($importantEvents.Count)"
+
+  if ($events.Count -eq 0) {
+    '[OK] No se encontraron eventos de las categorías consultadas en los últimos 7 días.'
+  } else {
     $groups = $events | Group-Object ProviderName,Id | Sort-Object Count -Descending | Select-Object -First 50
-    $importantCount = 0
     foreach ($g in $groups) {
       $e = $g.Group | Sort-Object TimeCreated -Descending | Select-Object -First 1
       $msg = ($e.Message -replace '\s+',' ').Trim()
       if ($msg.Length -gt 320) { $msg = $msg.Substring(0,320) + '…' }
       $important = Test-ImportantDiagnosticEvent $e
-      if ($important) { $importantCount++ }
       $tag = if ($important) { 'AVISO' } else { 'INFO' }
       "[$tag] $($e.ProviderName) | Evento $($e.Id) | Registros en muestra: $($g.Count) | Último: $($e.TimeCreated) | $msg"
     }
-    if ($importantCount -gt 0) { '[AVISO] Se encontraron eventos específicos de corrupción NTFS, errores de almacenamiento, fallos de hardware o cierres inesperados.' }
+    if ($importantEvents.Count -gt 0) {
+      '[AVISO] Se encontraron eventos específicos de corrupción NTFS, almacenamiento, hardware o apagados inesperados.'
+    } else {
+      '[INFO] No se identificaron eventos críticos de almacenamiento o apagado entre las categorías consultadas.'
+    }
   }
-  if ($systemEvents.Count -gt 250) { '[INFO] System alcanzó el límite de 250 eventos; el total real puede ser mayor.' }
-  if ($appEvents.Count -gt 250) { '[INFO] Application alcanzó el límite de 250 eventos; el total real puede ser mayor.' }
-  if ($systemEvents.Count -le 250 -and $appEvents.Count -le 250) { '[INFO] Ninguna de las dos muestras alcanzó su límite.' }
+
+  if ($saturated.Count -gt 0) {
+    '[INFO] Límite de muestra de la categoría alcanzado en: ' + ($saturated -join ', ') + '. Los registros mostrados son una muestra mínima observada; el total real puede ser mayor.'
+  } else {
+    '[INFO] Ninguna categoría dirigida alcanzó su límite de muestra.'
+  }
+  if ($scanBounded.Count -gt 0) {
+    '[INFO] Alcanzado el límite de búsqueda preliminar de 1000 eventos en: ' + (($scanBounded | Select-Object -Unique) -join ', ') + '. Las categorías afectadas podrían contener más coincidencias antiguas que no entraron en la búsqueda.'
+  } else {
+    '[INFO] Ninguna búsqueda preliminar alcanzó el límite bruto de 1000 eventos.'
+  }
 } catch { "[NO VERIFICADO] No se pudieron consultar los registros: $($_.Exception.Message)" }
-'Los eventos DCOM 10010 no se consideran automáticamente fallas críticas. Los conteos son muestras separadas por registro y no totales garantizados.'
-""", TimeSpan.FromSeconds(150)),
+'Los grupos dirigidos se muestrean por separado. Los eventos DCOM 10010 no se consideran automáticamente fallas críticas. Las muestras nunca se presentan como totales exhaustivos.'
+""", TimeSpan.FromSeconds(180)),
         new("updates", "Windows", "Actualizaciones instaladas y reinicio pendiente", """
 $ErrorActionPreference = 'Continue'
 '=== ACTUALIZACIONES INSTALADAS (MÁS RECIENTES) ==='

@@ -175,8 +175,9 @@ function Test-ImportantDiagnosticEvent($e) {
   return $false
 }
 try {
-  # Each event family has its own limit. A high-volume provider such as ESENT
-  # can no longer consume the entire sample and hide NTFS, storage or BugCheck events.
+  # Categories are queried independently. Provider matching is counted before
+  # deciding whether a category hit its sample cap, so unrelated event IDs cannot
+  # falsely saturate NTFS/storage/WHEA groups.
   $definitions = @(
     @{ Name='ESENT 474'; LogName='Application'; Ids=@(474); Limit=120; Provider='ESENT' },
     @{ Name='Errores de aplicaciones'; LogName='Application'; Ids=@(1000,1001,1002); Limit=120; Provider='Application Error|Application Hang|Windows Error Reporting|WER' },
@@ -187,21 +188,28 @@ try {
   )
   $records = New-Object System.Collections.Generic.List[object]
   $saturated = New-Object System.Collections.Generic.List[string]
+  $scanBounded = New-Object System.Collections.Generic.List[string]
+  $scanLimit = 1000
+
   foreach ($definition in $definitions) {
     $query = @(Get-WinEvent -FilterHashtable @{
       LogName=$definition.LogName
       Id=$definition.Ids
       StartTime=$since
-    } -MaxEvents ($definition.Limit + 1) -ErrorAction SilentlyContinue)
+    } -MaxEvents ($scanLimit + 1) -ErrorAction SilentlyContinue)
     $matching = @($query | Where-Object { $_.ProviderName -match $definition.Provider })
     foreach ($event in @($matching | Select-Object -First $definition.Limit)) {
       $records.Add($event)
     }
     "Grupo consultado: $($definition.Name) | Registros incluidos: $([math]::Min($matching.Count,$definition.Limit)) | Límite: $($definition.Limit)"
-    if ($query.Count -gt $definition.Limit) {
+    if ($matching.Count -gt $definition.Limit) {
       $saturated.Add($definition.Name)
     }
+    if ($query.Count -gt $scanLimit) {
+      $scanBounded.Add($definition.Name)
+    }
   }
+
   $events = @($records | Group-Object { "$($_.LogName)|$($_.RecordId)" } | ForEach-Object { $_.Group[0] })
   $app = @($events | Where-Object { $_.LogName -eq 'Application' })
   $sys = @($events | Where-Object { $_.LogName -eq 'System' })
@@ -232,16 +240,21 @@ try {
     if ($importantSystem.Count -gt 0) {
       '[AVISO] Se identificaron eventos específicos de almacenamiento, sistema de archivos, hardware o apagado inesperado.'
     } else {
-      '[INFO] No se detectaron patrones de error de almacenamiento o hardware entre las categorías de sistema consultadas.'
+      '[INFO] No se detectaron patrones de error de almacenamiento o hardware entre los eventos coincidentes.'
     }
   }
   if ($saturated.Count -gt 0) {
-    '[INFO] Límite de muestra alcanzado en: ' + ($saturated -join ', ') + '. Los registros mostrados son una muestra mínima observada; el total real del período puede ser mayor.'
+    '[INFO] Límite de muestra de la categoría alcanzado en: ' + ($saturated -join ', ') + '. Los registros mostrados son una muestra mínima observada; el total real puede ser mayor.'
   } else {
-    '[INFO] Ninguna de las consultas independientes alcanzó su límite de muestra.'
+    '[INFO] Ninguna categoría dirigida alcanzó su límite de muestra.'
+  }
+  if ($scanBounded.Count -gt 0) {
+    '[INFO] Alcanzado el límite de búsqueda preliminar de 1000 eventos en: ' + (($scanBounded | Select-Object -Unique) -join ', ') + '. Las categorías afectadas podrían contener coincidencias adicionales no incluidas.'
+  } else {
+    '[INFO] Ninguna búsqueda preliminar alcanzó el límite bruto de 1000 eventos.'
   }
 } catch { "[NO VERIFICADO] No se pudo consultar el historial de confiabilidad: $($_.Exception.Message)" }
-'Los eventos informativos de inicialización de VBS, Hyper-V y administración de energía del procesador no se clasifican como fallos. Las cantidades se refieren a muestras por categoría, no a un recuento exhaustivo del registro.'
+'Los eventos informativos de inicialización de VBS, Hyper-V y administración de energía del procesador no se clasifican como fallos. Los grupos se filtran por proveedor antes de calcular la saturación.'
 """, TimeSpan.FromSeconds(180)),
         new("software-inventory", "Rendimiento", "Inventario de programas instalados", """
 $ErrorActionPreference = 'Continue'

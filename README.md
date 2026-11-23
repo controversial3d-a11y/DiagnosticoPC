@@ -1,4 +1,4 @@
-# Diagnóstico PC 3.1.1
+# Diagnóstico PC 3.1.2
 
 Aplicación de escritorio portable para Windows 11 x64, en español. Reúne más de 20 comprobaciones locales para revisar hardware, almacenamiento, Windows, seguridad, red, rendimiento, controladores y mecanismos habituales de inicio automático.
 
@@ -7,7 +7,7 @@ Aplicación de escritorio portable para Windows 11 x64, en español. Reúne más
 - **Plan de acción numerado y priorizado:** las acciones se ordenan por gravedad y por dependencias técnicas. Cada recomendación explica qué detectó el programa, por qué importa, qué pasos seguir, qué comando se puede ejecutar manualmente, las precauciones y las referencias técnicas.
 - **Informe reorganizado:** primero muestra el plan de acción, después una lista única y compacta de resultados y, al final, la evidencia técnica original en un apéndice separado.
 - **Referencias oficiales:** enlaces a documentación de Microsoft, AMD, GIGABYTE, AnyDesk y Monect según el hallazgo. Las referencias están incluidas en el programa; no se consulta Internet para generar el diagnóstico ni para construir el plan. Los enlaces se abren solo cuando el usuario los selecciona.
-- **Muestreo de eventos por categoría:** separa ESENT, errores de aplicaciones, NTFS, almacenamiento, WHEA y apagados/bugchecks, con límites independientes y avisos cuando una muestra alcanza el tope. El informe no presenta los eventos muestreados como totales exhaustivos.
+- **Muestreo de eventos por categoría:** separa ESENT, errores de aplicaciones, NTFS, almacenamiento, WHEA y apagados/bugchecks; filtra proveedores antes de calcular saturación y limita por separado las búsquedas generales. Un origen de alto volumen no oculta fallos de aplicaciones y no se informa saturación en categorías con cero coincidencias.
 - **Servicios de acceso remoto adicionales:** identifica `MonectServerService` junto con AnyDesk y explica que un servicio o puerto local no prueba malware ni exposición a Internet.
 - **Entradas de inicio más precisas:** enumera el nombre, origen y ruta inexistente de cada entrada afectada, y contrasta coincidencias conocidas con el inventario de aplicaciones sin concluir que el programa completo esté desinstalado.
 - **Estado parcial de SmartScreen:** cuando Windows no expone un valor verificable, el informe lo cuenta explícitamente como no verificado en lugar de dejarlo como dato neutro.
