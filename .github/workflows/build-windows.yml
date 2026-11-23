@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build and publish DiagnosticoPC 3.1.1 (Windows x64)
+    name: Build and publish DiagnosticoPC 3.1.2 (Windows x64)
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -32,8 +32,32 @@ jobs:
       - name: Restore and compile
         run: dotnet build DiagnosticoPC.csproj -c Release
 
+      - name: Validate embedded PowerShell syntax
+        shell: pwsh
+        run: |
+          $files = @("DiagnosticEngine.cs", "AdvancedDiagnosticChecks.cs")
+          foreach ($file in $files) {
+            $source = Get-Content -LiteralPath $file -Raw
+            $scripts = [regex]::Matches($source, '(?s)"""(.*?)"""')
+            if ($scripts.Count -eq 0) { throw "No se encontraron scripts PowerShell en $file" }
+            $index = 0
+            foreach ($match in $scripts) {
+              $index++
+              $tokens = $null
+              $errors = $null
+              [System.Management.Automation.Language.Parser]::ParseInput(
+                $match.Groups[1].Value, [ref]$tokens, [ref]$errors
+              ) | Out-Null
+              if ($errors.Count -gt 0) {
+                $details = $errors | ForEach-Object { $_.Message + " (línea " + $_.Extent.StartLineNumber + ")" }
+                throw ("PowerShell inválido en {0}, bloque {1}: {2}" -f $file, $index, ($details -join "; "))
+              }
+            }
+            Write-Host ("{0}: {1} bloques PowerShell sin errores de sintaxis." -f $file, $scripts.Count)
+          }
+
       - name: Publish self-contained single-file executable
-        run: dotnet publish DiagnosticoPC.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=3.1.1 -p:AssemblyVersion=3.1.1.0 -p:FileVersion=3.1.1.0 -p:InformationalVersion=3.1.1 -p:DebugType=None -p:DebugSymbols=false
+        run: dotnet publish DiagnosticoPC.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=3.1.2 -p:AssemblyVersion=3.1.2.0 -p:FileVersion=3.1.2.0 -p:InformationalVersion=3.1.2 -p:DebugType=None -p:DebugSymbols=false
 
       - name: Verify executable and calculate SHA256
         shell: pwsh
@@ -49,7 +73,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DiagnosticoPC-3.1.1-Windows-x64
+          name: DiagnosticoPC-3.1.2-Windows-x64
           path: bin/Release/net10.0-windows/win-x64/publish/DiagnosticoPC.exe
           if-no-files-found: error
           retention-days: 30
@@ -57,14 +81,15 @@ jobs:
       - name: Publish downloadable GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.1.1
-          name: Diagnóstico PC 3.1.1
+          tag_name: v3.1.2
+          name: Diagnóstico PC 3.1.2
           body: |
-            Diagnóstico PC 3.1.1 — versión avanzada para Windows 11 x64.
+            Diagnóstico PC 3.1.2 — versión avanzada para Windows 11 x64.
             - Más de 20 comprobaciones locales de hardware, almacenamiento, Windows, seguridad, red y rendimiento.
             - Plan de acción numerado, ordenado por prioridad y dependencias técnicas.
             - Cada recomendación explica qué se detectó, por qué importa, pasos concretos, comando manual cuando corresponde y referencias oficiales.
-            - Muestreo de eventos independiente por categoría y registro, con aviso explícito al alcanzar límites.
+            - Muestreo de eventos independiente por categoría y registro; filtra proveedor antes de medir el límite y evita ocultar fallos de aplicaciones detrás de eventos ESENT repetitivos.
+            - El flujo de compilación valida la sintaxis de todos los bloques PowerShell embebidos antes de publicar.
             - Detección contextual de AnyDesk y MonectServerService sin falsos positivos por servicios ausentes.
             - Entradas de inicio inexistentes detalladas una por una y contrastadas con el inventario de programas.
             - SmartScreen no verificable contabilizado como prueba no verificada.
